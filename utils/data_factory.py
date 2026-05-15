@@ -315,32 +315,150 @@ class DataLoaderFactory:
         )
     
     def _create_segmentation_dataset(self, split: str) -> Dataset:
-        """Create segmentation dataset."""
+        """Create segmentation dataset — real mask folders if available, else dummy."""
         # Get configuration parameters
         num_classes = self.config.dataset_info.num_classes
         input_channels = 3  # Default
         input_size = (512, 512)  # Default for segmentation
-        
+
         # Extract channels and size from model config if available
         if hasattr(self.config, 'model_config') and self.config.model_config:
             if hasattr(self.config.model_config, 'config_params'):
                 input_channels = self.config.model_config.config_params.get('input_channels', 3)
-            
             if hasattr(self.config.model_config, 'input_size'):
                 if len(self.config.model_config.input_size) == 3:
-                    # Format: (channels, height, width)
                     input_channels, height, width = self.config.model_config.input_size
                     input_size = (height, width)
                 else:
-                    # Format: (height, width)
                     input_size = self.config.model_config.input_size
-        
-        # Determine dataset size based on split
+
+        # Try to load real data from disk
+        dataset_path = getattr(self.config.dataset_info, 'dataset_path', None)
+        if dataset_path:
+            real_ds = self._try_load_real_segmentation(
+                dataset_path, split, num_classes, input_channels, input_size
+            )
+            if real_ds is not None:
+                return real_ds
+
+        # Fall back to dummy dataset
         size = 300 if split == 'train' else 60
-        
         return DummySegmentationDataset(
             size=size,
             num_classes=num_classes,
             input_channels=input_channels,
-            input_size=input_size
+            input_size=input_size,
         )
+
+    def _try_load_real_segmentation(self, dataset_path, split: str, num_classes: int,
+                                     input_channels: int, input_size: tuple):
+        """Try to load a real image + mask segmentation dataset from disk.
+
+        Supports two folder conventions:
+          1. <root>/images/ + <root>/masks/   (images and masks in separate dirs)
+          2. <root>/<split>/images/ + <root>/<split>/masks/
+          3. Flat <root>/ with images named  *.jpg and masks named *_mask.png / *_seg.png
+
+        Masks are assumed to be single-channel PNGs where pixel value == class index.
+        Returns a Dataset or None if folder layout is not recognised.
+        """
+        from pathlib import Path as _Path
+
+        root = _Path(dataset_path)
+
+        # Candidate (images_dir, masks_dir) pairs to probe
+        candidates = [
+            (root / split / "images", root / split / "masks"),
+            (root / split / "images", root / split / "labels"),
+            (root / "images", root / "masks"),
+            (root / "images", root / "labels"),
+            (root / "imgs",   root / "masks"),
+        ]
+
+        images_dir = masks_dir = None
+        for img_d, msk_d in candidates:
+            if img_d.is_dir() and msk_d.is_dir():
+                images_dir, masks_dir = img_d, msk_d
+                break
+
+        if images_dir is None or masks_dir is None:
+            return None
+
+        # Collect matched pairs
+        img_exts = {'.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff'}
+        image_files = sorted([p for p in images_dir.iterdir() if p.suffix.lower() in img_exts])
+
+        pairs = []
+        for img_p in image_files:
+            stem = img_p.stem
+            # Try common mask naming conventions
+            for msk_name in [stem + '.png', stem + '_mask.png', stem + '_seg.png',
+                              stem + '.bmp', stem + img_p.suffix]:
+                msk_p = masks_dir / msk_name
+                if msk_p.exists():
+                    pairs.append((str(img_p), str(msk_p)))
+                    break
+
+        if len(pairs) < 4:
+            return None
+
+        # Split into train / val (80 / 20)
+        n = len(pairs)
+        if split == 'train':
+            pairs = pairs[:int(n * 0.8)]
+        else:
+            pairs = pairs[int(n * 0.8):]
+
+        if not pairs:
+            return None
+
+        return RealSegmentationDataset(pairs, num_classes, input_channels, input_size)
+
+
+class RealSegmentationDataset(Dataset):
+    """Dataset that loads image + mask pairs from disk."""
+
+    def __init__(self, pairs, num_classes: int, input_channels: int, input_size: tuple):
+        self.pairs = pairs
+        self.num_classes = num_classes
+        self.input_channels = input_channels
+        self.input_size = input_size  # (H, W)
+
+    def __len__(self):
+        return len(self.pairs)
+
+    def __getitem__(self, idx):
+        import torch
+        import numpy as np
+        try:
+            from PIL import Image
+        except ImportError:
+            raise RuntimeError("Pillow is required for real segmentation data loading")
+
+        img_path, msk_path = self.pairs[idx]
+        h, w = self.input_size
+
+        # Load image
+        img = Image.open(img_path)
+        if self.input_channels == 1:
+            img = img.convert('L')
+        elif self.input_channels == 3:
+            img = img.convert('RGB')
+        else:
+            img = img.convert('RGB')
+        img = img.resize((w, h), Image.BILINEAR)
+        img_arr = np.array(img, dtype=np.float32) / 255.0
+
+        if img_arr.ndim == 2:                          # grayscale (H, W)
+            img_arr = img_arr[np.newaxis, :, :]        # → (1, H, W)
+        else:                                          # (H, W, C)
+            img_arr = img_arr.transpose(2, 0, 1)       # → (C, H, W)
+
+        # Load mask (single channel, pixel = class index)
+        msk = Image.open(msk_path).convert('L')
+        msk = msk.resize((w, h), Image.NEAREST)
+        msk_arr = np.array(msk, dtype=np.int64)
+        # Clamp to [0, num_classes-1]; keep 255 as ignore index
+        msk_arr = np.where(msk_arr == 255, 255, np.clip(msk_arr, 0, self.num_classes - 1))
+
+        return torch.from_numpy(img_arr), torch.from_numpy(msk_arr)

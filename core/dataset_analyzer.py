@@ -320,21 +320,66 @@ class DatasetAnalyzer:
         )
     
     def _analyze_segmentation_dataset(self, dataset_path: Path, images: List[Path], structure: Dict) -> DatasetInfo:
-        """Analyze segmentation dataset."""
-        # Simplified segmentation analysis
+        """Analyze segmentation dataset — detect real image size and class count from masks."""
+
+        # Detect actual image size from sample images
+        sample_size, channels = self._analyze_sample_images(images[:10])
+
+        # Try to find mask files to determine actual class count
+        num_classes = 21  # Fallback: Pascal VOC default
+        class_names_detected = None
+
+        mask_dirs_to_check = [
+            dataset_path / 'masks',
+            dataset_path / 'labels',
+            dataset_path / 'SegmentationClass',
+            dataset_path / 'annotations',
+        ]
+        # Also check split-specific dirs
+        for split in ('train', 'val', 'test'):
+            mask_dirs_to_check.append(dataset_path / split / 'masks')
+            mask_dirs_to_check.append(dataset_path / split / 'labels')
+
+        mask_files: List[Path] = []
+        for mdir in mask_dirs_to_check:
+            if mdir.is_dir():
+                for ext in ('.png', '.bmp', '.tif', '.tiff'):
+                    mask_files.extend(list(mdir.glob(f'*{ext}')))
+                if mask_files:
+                    break
+
+        if mask_files:
+            try:
+                import numpy as np
+                from PIL import Image as _PIL
+                unique_values: set = set()
+                for mf in mask_files[:30]:  # sample up to 30 masks
+                    arr = np.array(_PIL.open(mf).convert('L'), dtype=np.uint8)
+                    unique_values.update(arr.flatten().tolist())
+                # Remove VOC border/ignore index (255)
+                unique_values.discard(255)
+                if unique_values:
+                    num_classes = int(max(unique_values)) + 1
+                    class_names_detected = [f"class_{i}" for i in range(num_classes)]
+            except Exception:
+                pass  # Keep default if PIL/numpy unavailable
+
+        if class_names_detected is None:
+            class_names_detected = [f"class_{i}" for i in range(num_classes)]
+
         return DatasetInfo(
             task_type="segmentation",
-            num_classes=21,  # Pascal VOC default
+            num_classes=num_classes,
             num_samples=len(images),
-            class_names=[f"class_{i}" for i in range(21)],
-            class_distribution={f"class_{i}": len(images)//21 for i in range(21)},
-            image_size=(512, 512),
-            image_stats={'mean': 0.5, 'std': 0.25},
-            has_annotations=True,
+            class_names=class_names_detected,
+            class_distribution={f"class_{i}": len(images) // max(num_classes, 1) for i in range(num_classes)},
+            image_size=sample_size,
+            image_stats=self._calculate_image_stats(images[:50]),
+            has_annotations=len(mask_files) > 0,
             annotation_format="mask",
-            recommended_batch_size=8,
-            estimated_training_time=self._estimate_training_time(len(images), 21),
-            channels=3,
+            recommended_batch_size=4 if sample_size[0] >= 512 else 8,
+            estimated_training_time=self._estimate_training_time(len(images), num_classes),
+            channels=channels,
             dataset_path=str(dataset_path)
         )
     

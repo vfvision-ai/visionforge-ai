@@ -1217,15 +1217,44 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
                 
                 return x
         
-        # Create model
-        model = AdaptiveCNN(num_classes, channels, img_size).to(device)
+        # Create model — use UNet for segmentation, AdaptiveCNN for classification
+        task_type = getattr(dataset_info, 'task_type', 'classification')
+        if task_type == 'segmentation':
+            try:
+                from utils.model_factory import ModelFactory
+                from utils.config import Config
+                # Build a minimal config to drive ModelFactory
+                _seg_config = type('_C', (), {
+                    'dataset_info': dataset_info,
+                    'model_config': model_config,
+                })()
+                _seg_config.dataset_info = dataset_info
+                _seg_config.model_config = model_config
+                model = ModelFactory(_seg_config).create_model().to(device)
+                logger.info(f"Segmentation model built via ModelFactory")
+            except Exception as _me:
+                logger.warning(f"ModelFactory failed ({_me}), using SimpleUNet fallback")
+                # Minimal UNet fallback
+                class _SimpleUNet(nn.Module):
+                    def __init__(self, nc, ch):
+                        super().__init__()
+                        self.enc = nn.Sequential(nn.Conv2d(ch, 64, 3, padding=1), nn.ReLU(),
+                                                  nn.Conv2d(64, 64, 3, padding=1), nn.ReLU())
+                        self.head = nn.Conv2d(64, nc, 1)
+                    def forward(self, x): return self.head(self.enc(x))
+                model = _SimpleUNet(num_classes, channels).to(device)
+        else:
+            model = AdaptiveCNN(num_classes, channels, img_size).to(device)
         
         # Count parameters
         total_params = sum(p.numel() for p in model.parameters())
         logger.info(f"Model created with {total_params:,} parameters")
         
-        # Setup training — use class weights if imbalance was detected
-        criterion = nn.CrossEntropyLoss(weight=class_weights_tensor)
+        # Setup training — segmentation uses pixel-wise loss with ignore_index
+        if task_type == 'segmentation':
+            criterion = nn.CrossEntropyLoss(ignore_index=255)
+        else:
+            criterion = nn.CrossEntropyLoss(weight=class_weights_tensor)
         optimizer = optim.Adam(model.parameters(), lr=0.001)
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
         
@@ -1285,9 +1314,14 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
         train_accuracies = []
         val_losses = []
         val_accuracies = []
+        train_mious = []
+        val_mious = []
+        val_dices = []
         
         best_accuracy = 0.0
         best_loss = float('inf')
+        best_miou = 0.0
+        best_dice = 0.0
         
         for epoch in range(max_epochs):
             # Training phase
@@ -1301,17 +1335,28 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
                 
                 optimizer.zero_grad()
                 output = model(data)
-                loss = criterion(output, target)
+                # Unwrap torchvision segmentation dict
+                raw_out = output['out'] if isinstance(output, dict) else output
+                loss = criterion(raw_out, target)
                 loss.backward()
                 optimizer.step()
                 
                 running_loss += loss.item()
-                _, predicted = torch.max(output.data, 1)
-                total += target.size(0)
-                correct += predicted.eq(target.data).cpu().sum().item()
+                if task_type == 'segmentation':
+                    from utils.metrics import compute_segmentation_metrics
+                    _miou, _dice, _ = compute_segmentation_metrics(raw_out.detach(), target, num_classes)
+                    correct += _miou * target.size(0)
+                    total += target.size(0)
+                else:
+                    _, predicted = torch.max(raw_out.data, 1)
+                    total += target.size(0)
+                    correct += predicted.eq(target.data).cpu().sum().item()
             
             train_loss = running_loss / len(train_loader)
-            train_acc = 100. * correct / total
+            if task_type == 'segmentation':
+                train_acc = (correct / total) * 100 if total > 0 else 0.0  # mIoU as %
+            else:
+                train_acc = 100. * correct / total
             
             # Validation phase
             model.eval()
@@ -1323,17 +1368,44 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
                 for data, target in test_loader:
                     data, target = data.to(device), target.to(device)
                     output = model(data)
-                    val_loss += criterion(output, target).item()
-                    _, predicted = torch.max(output.data, 1)
-                    val_total += target.size(0)
-                    val_correct += predicted.eq(target.data).cpu().sum().item()
+                    raw_out = output['out'] if isinstance(output, dict) else output
+                    val_loss += criterion(raw_out, target).item()
+                    if task_type == 'segmentation':
+                        from utils.metrics import compute_segmentation_metrics
+                        _miou, _dice, _ = compute_segmentation_metrics(raw_out, target, num_classes)
+                        val_correct += _miou * target.size(0)
+                        val_total += target.size(0)
+                        # accumulate dice too
+                        if not hasattr(model, '_dice_acc'):
+                            model._dice_acc = 0.0
+                            model._dice_cnt = 0
+                        model._dice_acc += _dice * target.size(0)
+                        model._dice_cnt += target.size(0)
+                    else:
+                        _, predicted = torch.max(raw_out.data, 1)
+                        val_total += target.size(0)
+                        val_correct += predicted.eq(target.data).cpu().sum().item()
             
             val_loss /= len(test_loader)
-            val_acc = 100. * val_correct / val_total
+            if task_type == 'segmentation':
+                val_acc = (val_correct / val_total) * 100 if val_total > 0 else 0.0  # mIoU %
+                _ep_dice = (model._dice_acc / model._dice_cnt * 100) if hasattr(model, '_dice_cnt') and model._dice_cnt > 0 else 0.0
+                val_mious.append(val_acc)
+                val_dices.append(_ep_dice)
+                # reset accumulators
+                model._dice_acc = 0.0
+                model._dice_cnt = 0
+                if val_acc > best_miou:
+                    best_miou  = val_acc
+                    best_accuracy = val_acc
+                    best_dice = _ep_dice
+            else:
+                val_acc = 100. * val_correct / val_total
             
             # Update best metrics
-            if val_acc > best_accuracy:
-                best_accuracy = val_acc
+            if task_type != 'segmentation':
+                if val_acc > best_accuracy:
+                    best_accuracy = val_acc
             if val_loss < best_loss:
                 best_loss = val_loss
             
@@ -1379,9 +1451,15 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
                     'epoch':        epoch + 1,
                     'loss':         round(train_loss, 4),
                     'val_loss':     round(val_loss, 4),
-                    'accuracy':     round(train_acc / 100.0, 4),
-                    'val_accuracy': round(val_acc / 100.0, 4),
                 }
+                if task_type == 'segmentation':
+                    log_dict['train_miou'] = round(train_acc / 100.0, 4)
+                    log_dict['val_miou']   = round(val_acc  / 100.0, 4)
+                    if val_dices:
+                        log_dict['val_dice'] = round(val_dices[-1] / 100.0, 4)
+                else:
+                    log_dict['accuracy']     = round(train_acc / 100.0, 4)
+                    log_dict['val_accuracy'] = round(val_acc   / 100.0, 4)
                 progress_ui['log_history'].append(log_dict)
                 recent = progress_ui['log_history'][-10:]
                 log_lines = [
@@ -1512,21 +1590,28 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
             'total_epochs': max_epochs,
             'framework': 'PyTorch',
             'model_parameters': total_params,
-            'architecture': 'AdaptiveCNN',
+            'architecture': 'AdaptiveCNN' if task_type != 'segmentation' else 'UNet',
             'model_saved': model_path,
             'class_names': class_names,
             'num_classes': num_classes,
             'input_size': img_size,
             'input_channels': channels,
             'dataset_name': dataset_name,
-            'task_type': dataset_info.task_type if hasattr(dataset_info, 'task_type') else 'classification',
+            'task_type': task_type,
             'training_history': {
                 'train_accuracy': [x/100.0 for x in train_accuracies],
                 'val_accuracy': [x/100.0 for x in val_accuracies],
+                'train_miou': [x/100.0 for x in val_mious],
+                'val_miou':   [x/100.0 for x in val_mious],
+                'val_dice':   [x/100.0 for x in val_dices],
                 'train_loss': train_losses,
                 'val_loss': val_losses
             }
         }
+        # Add segmentation-specific keys to top-level results for results page
+        if task_type == 'segmentation':
+            results['best_miou'] = best_miou / 100.0
+            results['best_dice'] = best_dice / 100.0
         
         # Save training results to JSON with intelligent naming
         results_name = model_name.replace('.pt', '_results.json')

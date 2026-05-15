@@ -49,7 +49,7 @@ except Exception as e:
     print(f"⚠️ PyTorch not available in trainer: {e}")
 
 from utils.config import Config
-from utils.metrics import MetricsTracker
+from utils.metrics import MetricsTracker, compute_segmentation_metrics
 from utils.callbacks import CallbackManager
 from utils.model_factory import ModelFactory
 from utils.data_factory import DataLoaderFactory
@@ -388,6 +388,9 @@ class AutoTrainer:
         total_loss = 0.0
         total_samples = 0
         correct_predictions = 0
+        seg_iou_sum = 0.0
+        seg_dice_sum = 0.0
+        seg_batches = 0
         
         self.callback_manager.on_train_epoch_begin()
         
@@ -422,6 +425,15 @@ class AutoTrainer:
             if self.config.dataset_info.task_type == "classification":
                 _, predicted = torch.max(outputs.data, 1)
                 correct_predictions += (predicted == targets).sum().item()
+            elif self.config.dataset_info.task_type == "segmentation":
+                seg_out = outputs['out'] if isinstance(outputs, dict) else outputs
+                miou, dice, _ = compute_segmentation_metrics(
+                    seg_out.detach(), targets,
+                    num_classes=self.config.dataset_info.num_classes
+                )
+                seg_iou_sum  += miou
+                seg_dice_sum += dice
+                seg_batches  += 1
             
             self.callback_manager.on_train_batch_end(batch_idx, {'loss': loss.item()})
         
@@ -436,6 +448,13 @@ class AutoTrainer:
             
             # Log detailed training accuracy
             self.logger.info(f"🚀 Training - Loss: {metrics['train_loss']:.6f}, Accuracy: {accuracy:.6f} ({accuracy*100:.4f}%)")
+        elif self.config.dataset_info.task_type == "segmentation" and seg_batches > 0:
+            miou = seg_iou_sum / seg_batches
+            dice = seg_dice_sum / seg_batches
+            metrics['train_miou']     = miou
+            metrics['train_dice']     = dice
+            metrics['train_accuracy'] = miou  # compatibility alias
+            self.logger.info(f"🚀 Training - Loss: {metrics['train_loss']:.6f}, mIoU: {miou:.4f} ({miou*100:.2f}%), Dice: {dice*100:.2f}%")
         
         self.callback_manager.on_train_epoch_end(metrics)
         return metrics
@@ -447,6 +466,9 @@ class AutoTrainer:
         total_loss = 0.0
         total_samples = 0
         correct_predictions = 0
+        seg_iou_sum = 0.0
+        seg_dice_sum = 0.0
+        seg_batches = 0
         
         self.callback_manager.on_val_epoch_begin()
         
@@ -467,6 +489,15 @@ class AutoTrainer:
                 if self.config.dataset_info.task_type == "classification":
                     _, predicted = torch.max(outputs.data, 1)
                     correct_predictions += (predicted == targets).sum().item()
+                elif self.config.dataset_info.task_type == "segmentation":
+                    seg_out = outputs['out'] if isinstance(outputs, dict) else outputs
+                    miou, dice, _ = compute_segmentation_metrics(
+                        seg_out, targets,
+                        num_classes=self.config.dataset_info.num_classes
+                    )
+                    seg_iou_sum  += miou
+                    seg_dice_sum += dice
+                    seg_batches  += 1
         
         metrics = {
             'val_loss': total_loss / total_samples,
@@ -485,7 +516,17 @@ class AutoTrainer:
                 improvement = accuracy - self.best_metric
                 self.logger.info(f"🎉 New Best Validation Accuracy! Improved by {improvement*100:.4f}%")
                 self.best_metric = accuracy
-            
+
+        elif self.config.dataset_info.task_type == "segmentation" and seg_batches > 0:
+            miou = seg_iou_sum / seg_batches
+            dice = seg_dice_sum / seg_batches
+            metrics['val_miou']     = miou
+            metrics['val_dice']     = dice
+            metrics['val_accuracy'] = miou  # compatibility alias
+            self.logger.info(f"✅ Validation - Loss: {metrics['val_loss']:.6f}, mIoU: {miou:.4f} ({miou*100:.2f}%), Dice: {dice*100:.2f}%")
+            if miou > self.best_metric:
+                self.logger.info(f"🎉 New Best mIoU: {miou*100:.4f}%!")
+                self.best_metric = miou
         # Update best metric
         current_metric = metrics.get('val_acc', -metrics.get('val_loss', float('inf')))
         if current_metric > self.best_metric:
@@ -507,13 +548,19 @@ class AutoTrainer:
             
         return inputs, targets
     
-    def _compute_loss(self, outputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    def _compute_loss(self, outputs, targets: torch.Tensor) -> torch.Tensor:
         """Compute loss based on task type."""
+        # Torchvision segmentation models (DeepLabV3, FCN) return a dict with 'out' and optional 'aux'
+        if isinstance(outputs, dict):
+            main_out = outputs['out']
+            loss = self.criterion(main_out, targets) if self.criterion else main_out
+            if 'aux' in outputs and self.criterion:
+                loss = loss + 0.4 * self.criterion(outputs['aux'], targets)
+            return loss
         if self.criterion:
             return self.criterion(outputs, targets)
-        else:
-            # For detection models, loss is computed within the model
-            return outputs  # Assume outputs contains loss for detection
+        # For detection models, loss is computed within the model
+        return outputs
     
     def _generate_results(self) -> TrainingResults:
         """Generate final training results with detailed accuracy analysis."""
@@ -522,9 +569,15 @@ class AutoTrainer:
         # Get comprehensive accuracy summary
         accuracy_summary = self.metrics_tracker.get_accuracy_summary()
         
-        # Get best metrics
+        # Get best metrics — use mIoU for segmentation, accuracy for classification
         best_val_loss, best_loss_epoch = self.metrics_tracker.get_best('val_loss', 'min')
-        best_val_acc, best_acc_epoch = self.metrics_tracker.get_best('val_acc', 'max') if 'val_acc' in self.metrics_tracker.history else (0, 0)
+        is_segmentation = self.config.dataset_info.task_type == 'segmentation'
+        if is_segmentation and 'val_miou' in self.metrics_tracker.history:
+            best_val_acc, best_acc_epoch = self.metrics_tracker.get_best('val_miou', 'max')
+        elif 'val_acc' in self.metrics_tracker.history:
+            best_val_acc, best_acc_epoch = self.metrics_tracker.get_best('val_acc', 'max')
+        else:
+            best_val_acc, best_acc_epoch = 0, 0
         
         # Log final training summary
         self.logger.info("=" * 60)

@@ -204,30 +204,105 @@ class ModelFactory:
         num_classes = self.config.dataset_info.num_classes
         in_channels = self._get_channels()
 
-        if TORCH_AVAILABLE and in_channels == 3:
-            try:
-                arch_key = architecture.lower()
-                if "deeplabv3" in arch_key:
-                    from torchvision.models.segmentation import deeplabv3_resnet50
-                    model = deeplabv3_resnet50(weights=None, num_classes=num_classes)
-                else:
-                    from torchvision.models.segmentation import fcn_resnet50
-                    model = fcn_resnet50(weights=None, num_classes=num_classes)
-                logger.info(f"Created segmentation model: {architecture}")
-                return model
-            except Exception as e:
-                logger.warning(f"Segmentation model build failed ({e}), using simple baseline")
+        arch_key = architecture.lower()
 
+        if TORCH_AVAILABLE:
+            # ── UNet (custom, works for any channel count) ─────────────────
+            if "unet" in arch_key:
+                logger.info(f"Building UNet segmentation model ({in_channels} ch → {num_classes} classes)")
+                return self._build_unet(num_classes, in_channels)
+
+            # ── torchvision DeepLabV3 / FCN (3-channel only natively) ──────
+            if in_channels == 3:
+                try:
+                    from torchvision.models.segmentation import deeplabv3_resnet50, fcn_resnet50
+
+                    if "deeplabv3" in arch_key or "segformer" in arch_key:
+                        base = deeplabv3_resnet50(weights=None, num_classes=num_classes)
+                    else:
+                        base = fcn_resnet50(weights=None, num_classes=num_classes)
+
+                    # Wrap to unwrap the output dict so the trainer receives a plain tensor
+                    class _DictWrapper(nn.Module):
+                        def __init__(self, model):
+                            super().__init__()
+                            self.model = model
+                        def forward(self, x):
+                            out = self.model(x)
+                            return out  # keep dict; trainer._compute_loss handles it
+
+                    logger.info(f"Created torchvision segmentation model: {architecture}")
+                    return _DictWrapper(base)
+                except Exception as e:
+                    logger.warning(f"Torchvision segmentation build failed ({e}), falling back to UNet")
+
+            # Fallback: UNet works for any channel count
+            logger.info(f"Building UNet fallback ({in_channels} ch → {num_classes} classes)")
+            return self._build_unet(num_classes, in_channels)
+
+        # Minimal baseline when torch is unavailable
         class SimpleSegmenter(nn.Module):
             def __init__(self, num_classes, in_ch):
                 super().__init__()
                 self.encoder = nn.Sequential(
                     nn.Conv2d(in_ch, 64, 3, padding=1), nn.ReLU(),
-                    nn.Conv2d(64, 32, 3, padding=1), nn.ReLU(),
+                    nn.Conv2d(64, 64, 3, padding=1), nn.ReLU(),
                 )
-                self.head = nn.Conv2d(32, num_classes, 1)
-
+                self.head = nn.Conv2d(64, num_classes, 1)
             def forward(self, x):
                 return self.head(self.encoder(x))
 
         return SimpleSegmenter(num_classes, in_channels)
+
+    def _build_unet(self, num_classes: int, in_channels: int) -> nn.Module:
+        """Lightweight UNet-style encoder-decoder for any channel count."""
+
+        class DoubleConv(nn.Module):
+            def __init__(self, in_ch, out_ch):
+                super().__init__()
+                self.block = nn.Sequential(
+                    nn.Conv2d(in_ch, out_ch, 3, padding=1, bias=False),
+                    nn.BatchNorm2d(out_ch), nn.ReLU(inplace=True),
+                    nn.Conv2d(out_ch, out_ch, 3, padding=1, bias=False),
+                    nn.BatchNorm2d(out_ch), nn.ReLU(inplace=True),
+                )
+            def forward(self, x):
+                return self.block(x)
+
+        class UNet(nn.Module):
+            def __init__(self, in_ch, num_classes, base=32):
+                super().__init__()
+                self.enc1 = DoubleConv(in_ch,     base)
+                self.enc2 = DoubleConv(base,      base * 2)
+                self.enc3 = DoubleConv(base * 2,  base * 4)
+                self.enc4 = DoubleConv(base * 4,  base * 8)
+                self.pool = nn.MaxPool2d(2)
+
+                self.bottleneck = DoubleConv(base * 8, base * 16)
+
+                self.up4   = nn.ConvTranspose2d(base * 16, base * 8,  2, stride=2)
+                self.dec4  = DoubleConv(base * 16, base * 8)
+                self.up3   = nn.ConvTranspose2d(base * 8,  base * 4,  2, stride=2)
+                self.dec3  = DoubleConv(base * 8,  base * 4)
+                self.up2   = nn.ConvTranspose2d(base * 4,  base * 2,  2, stride=2)
+                self.dec2  = DoubleConv(base * 4,  base * 2)
+                self.up1   = nn.ConvTranspose2d(base * 2,  base,      2, stride=2)
+                self.dec1  = DoubleConv(base * 2,  base)
+
+                self.head  = nn.Conv2d(base, num_classes, 1)
+
+            def forward(self, x):
+                import torch.nn.functional as F
+                e1 = self.enc1(x)
+                e2 = self.enc2(self.pool(e1))
+                e3 = self.enc3(self.pool(e2))
+                e4 = self.enc4(self.pool(e3))
+                b  = self.bottleneck(self.pool(e4))
+
+                d4 = self.dec4(torch.cat([self.up4(b),  e4], dim=1))
+                d3 = self.dec3(torch.cat([self.up3(d4), e3], dim=1))
+                d2 = self.dec2(torch.cat([self.up2(d3), e2], dim=1))
+                d1 = self.dec1(torch.cat([self.up1(d2), e1], dim=1))
+                return self.head(d1)
+
+        return UNet(in_channels, num_classes)
