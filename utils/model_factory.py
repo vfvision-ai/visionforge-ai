@@ -186,16 +186,65 @@ class ModelFactory:
                 logger.warning(f"Detection model build failed ({e}), using simple baseline")
 
         class SimpleDetector(nn.Module):
-            def __init__(self, num_classes, in_ch):
+            """Minimal detection model whose API mirrors torchvision detection models.
+
+            Train mode  (with targets): returns a dict of loss tensors.
+            Eval  mode  (no targets)  : returns a list of prediction dicts
+                                        [{'boxes': (N,4), 'labels': (N,), 'scores': (N,)}].
+            """
+            def __init__(self, n_cls, in_ch):
                 super().__init__()
+                self.n_cls = n_cls
                 self.backbone = nn.Sequential(
                     nn.Conv2d(in_ch, 64, 3, padding=1), nn.ReLU(),
-                    nn.AdaptiveAvgPool2d(1), nn.Flatten(),
+                    nn.AdaptiveAvgPool2d(4),
                 )
-                self.head = nn.Linear(64, num_classes * 5)  # (cls + 4 bbox coords)
+                self.cls_head = nn.Linear(64 * 4 * 4, n_cls)
+                self.box_head = nn.Linear(64 * 4 * 4, 4)
 
-            def forward(self, x):
-                return self.head(self.backbone(x))
+            def forward(self, images, targets=None):
+                import torch.nn.functional as F
+                feats = self.backbone(images).flatten(1)
+                cls_logits = self.cls_head(feats)           # (B, n_cls)
+                box_pred   = torch.sigmoid(self.box_head(feats))  # (B, 4) in [0, 1]
+
+                if self.training and targets is not None:
+                    # --- build simple surrogate losses ---
+                    device = images.device
+                    cls_tgts = torch.tensor(
+                        [int(t['labels'][0]) if len(t['labels']) > 0 else 0 for t in targets],
+                        dtype=torch.long, device=device,
+                    )
+                    loss_cls = F.cross_entropy(cls_logits, cls_tgts)
+                    # Regression: pull predicted box toward GT box of first object
+                    # (normalised to [0,1] by dividing by image W/H)
+                    h, w = images.shape[2], images.shape[3]
+                    gt_boxes = []
+                    for t in targets:
+                        if len(t['boxes']) > 0:
+                            b = t['boxes'][0].float()  # xyxy
+                            gt_boxes.append(torch.stack([b[0]/w, b[1]/h, b[2]/w, b[3]/h]))
+                        else:
+                            gt_boxes.append(torch.zeros(4, device=device))
+                    gt_boxes = torch.stack(gt_boxes)
+                    loss_box = F.l1_loss(box_pred, gt_boxes)
+                    return {'loss_classifier': loss_cls, 'loss_box_reg': loss_box}
+
+                # --- eval: return list of prediction dicts ---
+                h, w = images.shape[2], images.shape[3]
+                scores = torch.softmax(cls_logits, dim=-1)  # (B, n_cls)
+                results = []
+                for i in range(images.shape[0]):
+                    # Denormalise box
+                    b = box_pred[i]
+                    box_xyxy = torch.stack([b[0]*w, b[1]*h, b[2]*w, b[3]*h]).unsqueeze(0)
+                    top_score, top_label = scores[i].max(dim=0)
+                    results.append({
+                        'boxes':  box_xyxy,
+                        'labels': top_label.unsqueeze(0),
+                        'scores': top_score.unsqueeze(0),
+                    })
+                return results
 
         return SimpleDetector(num_classes, in_channels)
 

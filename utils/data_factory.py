@@ -210,6 +210,18 @@ class DummySegmentationDataset(Dataset):
         return image, mask
 
 
+def _detection_collate(batch):
+    """Collate function for detection datasets.
+
+    Each item is (image_tensor, target_dict) where target_dict contains
+    variable-length 'boxes' and 'labels' tensors.  PyTorch's default collate
+    cannot stack variable-length tensors, so we keep targets as a list.
+    """
+    images  = torch.stack([item[0] for item in batch])
+    targets = [item[1] for item in batch]
+    return images, targets
+
+
 class DataLoaderFactory:
     """Factory for creating data loaders."""
     
@@ -219,23 +231,27 @@ class DataLoaderFactory:
     def create_train_loader(self) -> DataLoader:
         """Create training data loader."""
         dataset = self._create_dataset('train')
+        is_detection = self.config.dataset_info.task_type == "detection"
         return DataLoader(
             dataset,
             batch_size=self.config.batch_size,
             shuffle=True,
-            num_workers=0,  # Set to 0 to avoid multiprocessing/pickling issues
-            pin_memory=False  # Disable for compatibility
+            num_workers=0,
+            pin_memory=False,
+            collate_fn=_detection_collate if is_detection else None,
         )
     
     def create_val_loader(self) -> DataLoader:
         """Create validation data loader."""
         dataset = self._create_dataset('val')
+        is_detection = self.config.dataset_info.task_type == "detection"
         return DataLoader(
             dataset,
             batch_size=self.config.batch_size,
             shuffle=False,
-            num_workers=0,  # Set to 0 to avoid multiprocessing/pickling issues
-            pin_memory=False  # Disable for compatibility
+            num_workers=0,
+            pin_memory=False,
+            collate_fn=_detection_collate if is_detection else None,
         )
     
     def _create_dataset(self, split: str) -> Dataset:

@@ -456,8 +456,39 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
         # Add normalization if enabled
         transform_train = transforms.Compose(base_transforms_train + norm_transform)
         transform_test = transforms.Compose(base_transforms_test + norm_transform)
-        
-        if is_builtin_dataset:
+
+        # ── Detection task: bypass image-folder loading, use DataLoaderFactory ──
+        _task_type_early = getattr(dataset_info, 'task_type', 'classification')
+        if _task_type_early == 'detection':
+            logger.info('Detection task detected — using DataLoaderFactory for data loading')
+            try:
+                from utils.data_factory import DataLoaderFactory as _DLF
+                from utils.config import Config as _Cfg
+                _det_cfg = type('_DC', (), {
+                    'dataset_info': dataset_info,
+                    'model_config':  model_config,
+                    'batch_size':    batch_size,
+                })()
+                _dlf = _DLF(_det_cfg)
+                train_loader = _dlf.create_train_loader()
+                test_loader  = _dlf.create_val_loader()
+                logger.info(f'Detection DataLoaders created: '
+                            f'{len(train_loader.dataset)} train, '
+                            f'{len(test_loader.dataset)} val')
+            except Exception as _det_dl_err:
+                logger.error(f'Detection DataLoader failed ({_det_dl_err}), using dummy detection data')
+                from utils.data_factory import DummyDetectionDataset, _detection_collate
+                _det_train = DummyDetectionDataset(size=400, num_classes=num_classes,
+                                                   input_channels=channels, input_size=img_size)
+                _det_val   = DummyDetectionDataset(size=100,  num_classes=num_classes,
+                                                   input_channels=channels, input_size=img_size,
+                                                   split='val')
+                train_loader = DataLoader(_det_train, batch_size=batch_size, shuffle=True,
+                                          collate_fn=_detection_collate, num_workers=0)
+                test_loader  = DataLoader(_det_val,   batch_size=batch_size, shuffle=False,
+                                          collate_fn=_detection_collate, num_workers=0)
+
+        elif is_builtin_dataset:
             logger.info(f"Loading built-in PyTorch dataset: {dataset_info.builtin_dataset_name}")
             
             # Load the appropriate torchvision dataset
@@ -1217,9 +1248,25 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
                 
                 return x
         
-        # Create model — use UNet for segmentation, AdaptiveCNN for classification
+        # Create model — UNet for segmentation, ModelFactory for detection, AdaptiveCNN for classification
         task_type = getattr(dataset_info, 'task_type', 'classification')
-        if task_type == 'segmentation':
+        if task_type == 'detection':
+            try:
+                from utils.model_factory import ModelFactory
+                _det_model_cfg = type('_DC', (), {
+                    'dataset_info': dataset_info,
+                    'model_config':  model_config,
+                })()
+                model = ModelFactory(_det_model_cfg).create_model().to(device)
+                logger.info('Detection model built via ModelFactory')
+            except Exception as _det_me:
+                logger.warning(f'ModelFactory failed for detection ({_det_me}), using SimpleDetector fallback')
+                from utils.model_factory import ModelFactory
+                model = ModelFactory(type('_DC', (), {
+                    'dataset_info': dataset_info,
+                    'model_config':  model_config,
+                })()).create_model().to(device)
+        elif task_type == 'segmentation':
             try:
                 from utils.model_factory import ModelFactory
                 from utils.config import Config
@@ -1250,8 +1297,10 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
         total_params = sum(p.numel() for p in model.parameters())
         logger.info(f"Model created with {total_params:,} parameters")
         
-        # Setup training — segmentation uses pixel-wise loss with ignore_index
-        if task_type == 'segmentation':
+        # Setup training — detection loss comes from model; segmentation uses pixel CE
+        if task_type == 'detection':
+            criterion = None          # model returns loss dict in train mode
+        elif task_type == 'segmentation':
             criterion = nn.CrossEntropyLoss(ignore_index=255)
         else:
             criterion = nn.CrossEntropyLoss(weight=class_weights_tensor)
@@ -1317,11 +1366,13 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
         train_mious = []
         val_mious = []
         val_dices = []
-        
+        val_map50s = []   # detection mAP@50 per epoch
+
         best_accuracy = 0.0
         best_loss = float('inf')
         best_miou = 0.0
         best_dice = 0.0
+        best_map50 = 0.0
         
         for epoch in range(max_epochs):
             # Training phase
@@ -1330,27 +1381,40 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
             correct = 0
             total = 0
             
-            for batch_idx, (data, target) in enumerate(train_loader):
-                data, target = data.to(device), target.to(device)
-                
-                optimizer.zero_grad()
-                output = model(data)
-                # Unwrap torchvision segmentation dict
-                raw_out = output['out'] if isinstance(output, dict) else output
-                loss = criterion(raw_out, target)
-                loss.backward()
-                optimizer.step()
-                
-                running_loss += loss.item()
-                if task_type == 'segmentation':
-                    from utils.metrics import compute_segmentation_metrics
-                    _miou, _dice, _ = compute_segmentation_metrics(raw_out.detach(), target, num_classes)
-                    correct += _miou * target.size(0)
-                    total += target.size(0)
+            for batch_idx, batch in enumerate(train_loader):
+                if task_type == 'detection':
+                    data, target = batch
+                    data = data.to(device)
+                    target = [{k: v.to(device) if isinstance(v, torch.Tensor) else v
+                               for k, v in t.items()} for t in target]
+                    optimizer.zero_grad()
+                    loss_dict = model(data, target)   # train mode → loss dict
+                    loss = sum(loss_dict.values())
+                    loss.backward()
+                    optimizer.step()
+                    running_loss += loss.item()
+                    total += data.size(0)
+                    correct += 0   # no per-batch accuracy for detection
                 else:
-                    _, predicted = torch.max(raw_out.data, 1)
-                    total += target.size(0)
-                    correct += predicted.eq(target.data).cpu().sum().item()
+                    data, target = batch
+                    data, target = data.to(device), target.to(device)
+                    optimizer.zero_grad()
+                    output = model(data)
+                    # Unwrap torchvision segmentation dict
+                    raw_out = output['out'] if isinstance(output, dict) else output
+                    loss = criterion(raw_out, target)
+                    loss.backward()
+                    optimizer.step()
+                    running_loss += loss.item()
+                    if task_type == 'segmentation':
+                        from utils.metrics import compute_segmentation_metrics
+                        _miou, _dice, _ = compute_segmentation_metrics(raw_out.detach(), target, num_classes)
+                        correct += _miou * target.size(0)
+                        total += target.size(0)
+                    else:
+                        _, predicted = torch.max(raw_out.data, 1)
+                        total += target.size(0)
+                        correct += predicted.eq(target.data).cpu().sum().item()
             
             train_loss = running_loss / len(train_loader)
             if task_type == 'segmentation':
@@ -1364,57 +1428,87 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
             val_correct = 0
             val_total = 0
             
+            det_val_preds: list = []
+            det_val_targets: list = []
             with torch.no_grad():
-                for data, target in test_loader:
-                    data, target = data.to(device), target.to(device)
-                    output = model(data)
-                    raw_out = output['out'] if isinstance(output, dict) else output
-                    val_loss += criterion(raw_out, target).item()
-                    if task_type == 'segmentation':
-                        from utils.metrics import compute_segmentation_metrics
-                        _miou, _dice, _ = compute_segmentation_metrics(raw_out, target, num_classes)
-                        val_correct += _miou * target.size(0)
-                        val_total += target.size(0)
-                        # accumulate dice too
-                        if not hasattr(model, '_dice_acc'):
-                            model._dice_acc = 0.0
-                            model._dice_cnt = 0
-                        model._dice_acc += _dice * target.size(0)
-                        model._dice_cnt += target.size(0)
+                for batch in test_loader:
+                    if task_type == 'detection':
+                        data, target = batch
+                        data = data.to(device)
+                        target_dev = [{k: v.to(device) if isinstance(v, torch.Tensor) else v
+                                       for k, v in t.items()} for t in target]
+                        preds = model(data)   # eval mode → list of pred dicts
+                        det_val_preds.extend(preds)
+                        det_val_targets.extend(target_dev)
+                        val_total += data.size(0)
                     else:
-                        _, predicted = torch.max(raw_out.data, 1)
-                        val_total += target.size(0)
-                        val_correct += predicted.eq(target.data).cpu().sum().item()
+                        data, target = batch
+                        data, target = data.to(device), target.to(device)
+                        output = model(data)
+                        raw_out = output['out'] if isinstance(output, dict) else output
+                        val_loss += criterion(raw_out, target).item()
+                        if task_type == 'segmentation':
+                            from utils.metrics import compute_segmentation_metrics
+                            _miou, _dice, _ = compute_segmentation_metrics(raw_out, target, num_classes)
+                            val_correct += _miou * target.size(0)
+                            val_total += target.size(0)
+                            # accumulate dice too
+                            if not hasattr(model, '_dice_acc'):
+                                model._dice_acc = 0.0
+                                model._dice_cnt = 0
+                            model._dice_acc += _dice * target.size(0)
+                            model._dice_cnt += target.size(0)
+                        else:
+                            _, predicted = torch.max(raw_out.data, 1)
+                            val_total += target.size(0)
+                            val_correct += predicted.eq(target.data).cpu().sum().item()
             
-            val_loss /= len(test_loader)
-            if task_type == 'segmentation':
-                val_acc = (val_correct / val_total) * 100 if val_total > 0 else 0.0  # mIoU %
-                _ep_dice = (model._dice_acc / model._dice_cnt * 100) if hasattr(model, '_dice_cnt') and model._dice_cnt > 0 else 0.0
-                val_mious.append(val_acc)
-                val_dices.append(_ep_dice)
-                # reset accumulators
-                model._dice_acc = 0.0
-                model._dice_cnt = 0
-                if val_acc > best_miou:
-                    best_miou  = val_acc
-                    best_accuracy = val_acc
-                    best_dice = _ep_dice
+            if task_type == 'detection':
+                val_loss_avg = 0.0   # no loss computed during eval for detection
+                val_acc = 0.0
+                if det_val_preds:
+                    from utils.metrics import compute_detection_metrics
+                    _det_res = compute_detection_metrics(det_val_preds, det_val_targets, iou_threshold=0.5)
+                    val_map50 = _det_res.get('mAP@50', 0.0) * 100  # store as %
+                else:
+                    val_map50 = 0.0
+                val_map50s.append(val_map50)
+                val_acc = val_map50
+                if val_map50 > best_map50:
+                    best_map50 = val_map50
+                    best_accuracy = val_map50
             else:
-                val_acc = 100. * val_correct / val_total
-            
+                val_loss_avg = val_loss / max(len(test_loader), 1)
+                if task_type == 'segmentation':
+                    val_acc = (val_correct / val_total) * 100 if val_total > 0 else 0.0  # mIoU %
+                    _ep_dice = (model._dice_acc / model._dice_cnt * 100) if hasattr(model, '_dice_cnt') and model._dice_cnt > 0 else 0.0
+                    val_mious.append(val_acc)
+                    val_dices.append(_ep_dice)
+                    # reset accumulators
+                    model._dice_acc = 0.0
+                    model._dice_cnt = 0
+                    if val_acc > best_miou:
+                        best_miou  = val_acc
+                        best_accuracy = val_acc
+                        best_dice = _ep_dice
+                else:
+                    val_acc = 100. * val_correct / max(val_total, 1)
+
+            val_loss = val_loss_avg if task_type != 'detection' else 0.0
+
             # Update best metrics
-            if task_type != 'segmentation':
+            if task_type not in ('segmentation', 'detection'):
                 if val_acc > best_accuracy:
                     best_accuracy = val_acc
             if val_loss < best_loss:
                 best_loss = val_loss
-            
+
             # Store metrics
             train_losses.append(train_loss)
             train_accuracies.append(train_acc)
             val_losses.append(val_loss)
             val_accuracies.append(val_acc)
-            
+
             # Call callbacks with metrics
             epoch_metrics = {
                 'train_loss': train_loss,
@@ -1423,6 +1517,8 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
                 'val_acc': val_acc,
                 'epoch': epoch
             }
+            if task_type == 'detection':
+                epoch_metrics['val_map50'] = val_map50
             
             callback_manager.on_epoch_end(epoch, epoch_metrics)
             
@@ -1457,6 +1553,10 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
                     log_dict['val_miou']   = round(val_acc  / 100.0, 4)
                     if val_dices:
                         log_dict['val_dice'] = round(val_dices[-1] / 100.0, 4)
+                elif task_type == 'detection':
+                    log_dict['val_map50']  = round(val_map50 / 100.0, 4)
+                    log_dict['accuracy']     = 0.0
+                    log_dict['val_accuracy'] = round(val_map50 / 100.0, 4)
                 else:
                     log_dict['accuracy']     = round(train_acc / 100.0, 4)
                     log_dict['val_accuracy'] = round(val_acc   / 100.0, 4)
@@ -1590,7 +1690,10 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
             'total_epochs': max_epochs,
             'framework': 'PyTorch',
             'model_parameters': total_params,
-            'architecture': 'AdaptiveCNN' if task_type != 'segmentation' else 'UNet',
+            'architecture': (
+                'AdaptiveCNN' if task_type not in ('segmentation', 'detection')
+                else ('UNet' if task_type == 'segmentation' else 'Detector')
+            ),
             'model_saved': model_path,
             'class_names': class_names,
             'num_classes': num_classes,
@@ -1604,6 +1707,7 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
                 'train_miou': [x/100.0 for x in val_mious],
                 'val_miou':   [x/100.0 for x in val_mious],
                 'val_dice':   [x/100.0 for x in val_dices],
+                'val_map50':  [x/100.0 for x in val_map50s],
                 'train_loss': train_losses,
                 'val_loss': val_losses
             }
@@ -1612,6 +1716,8 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
         if task_type == 'segmentation':
             results['best_miou'] = best_miou / 100.0
             results['best_dice'] = best_dice / 100.0
+        elif task_type == 'detection':
+            results['best_map50'] = best_map50 / 100.0
         
         # Save training results to JSON with intelligent naming
         results_name = model_name.replace('.pt', '_results.json')

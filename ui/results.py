@@ -66,12 +66,21 @@ def show_results():
                 task_type = getattr(st.session_state.dataset_info, 'task_type', 'classification')
 
             is_segmentation = task_type == 'segmentation'
-            acc_label = 'Best mIoU' if is_segmentation else 'Final Accuracy'
-            acc_icon  = '🗺️' if is_segmentation else '🎯'
+            is_detection    = task_type == 'detection'
+            if is_detection:
+                acc_label = 'Best mAP@50'
+                acc_icon  = '🎯'
+            elif is_segmentation:
+                acc_label = 'Best mIoU'
+                acc_icon  = '🗺️'
+            else:
+                acc_label = 'Final Accuracy'
+                acc_icon  = '🎯'
 
-            # Also pull mIoU/Dice if present in results
+            # Also pull mIoU/Dice / mAP@50 if present in results
             miou_val  = results.get('best_miou', results.get('val_miou', None))
             dice_val  = results.get('best_dice', results.get('val_dice', None))
+            map50_val = results.get('best_map50', results.get('val_map50', None))
 
             # Beautiful metric row
             mc1, mc2, mc3, mc4 = st.columns(4)
@@ -81,6 +90,9 @@ def show_results():
                 if is_segmentation and dice_val is not None:
                     d = dice_val * 100 if dice_val <= 1 else dice_val
                     metric_card("Best Dice", f"{d:.2f}%", icon="🎲", color="teal")
+                elif is_detection and map50_val is not None:
+                    p = map50_val * 100 if map50_val <= 1 else map50_val
+                    metric_card("mAP@50", f"{p:.2f}%", icon="📦", color="teal")
                 else:
                     metric_card("Final Loss", f"{loss:.4f}", icon="📉", color="teal")
             with mc3:
@@ -160,31 +172,55 @@ def show_results():
                                 yaxis=dict(title="Score (%)", gridcolor="rgba(255,255,255,.06)"),
                             )
                         else:
-                            for col_name, label, color in [
-                                ("accuracy", "Train Acc", "#00d4aa"),
-                                ("val_accuracy", "Val Acc", "#ffd93d"),
-                                ("acc", "Train Acc", "#00d4aa"),
-                                ("val_acc", "Val Acc", "#ffd93d"),
-                            ]:
-                                if col_name in df_log.columns:
-                                    vals = df_log[col_name]
-                                    if vals.max() <= 1.0:
-                                        vals = vals * 100
-                                    fig_acc.add_trace(go.Scatter(
-                                        x=df_log[x_col] if has_epoch else df_log.index,
-                                        y=vals, mode="lines+markers",
-                                        name=label, line=dict(color=color, width=2,
-                                        dash="dash" if "val" in col_name else "solid"),
-                                        marker=dict(size=4),
-                                    ))
-                            fig_acc.update_layout(
-                                title="Accuracy over Epochs", template="plotly_dark",
-                                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                                height=280, margin=dict(l=0, r=0, t=40, b=0),
-                                legend=dict(orientation="h", y=-0.2),
-                                xaxis=dict(title="Epoch", gridcolor="rgba(255,255,255,.06)"),
-                                yaxis=dict(title="Accuracy (%)", gridcolor="rgba(255,255,255,.06)"),
-                            )
+                            if is_detection:
+                                # Detection: plot mAP@50 curve
+                                for col_name, label, color in [
+                                    ("val_map50", "Val mAP@50", "#ffd93d"),
+                                ]:
+                                    if col_name in df_log.columns:
+                                        vals = df_log[col_name]
+                                        if vals.max() <= 1.0:
+                                            vals = vals * 100
+                                        fig_acc.add_trace(go.Scatter(
+                                            x=df_log[x_col] if has_epoch else df_log.index,
+                                            y=vals, mode="lines+markers",
+                                            name=label, line=dict(color=color, width=2),
+                                            marker=dict(size=4),
+                                        ))
+                                fig_acc.update_layout(
+                                    title="mAP@50 over Epochs", template="plotly_dark",
+                                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                    height=280, margin=dict(l=0, r=0, t=40, b=0),
+                                    legend=dict(orientation="h", y=-0.2),
+                                    xaxis=dict(title="Epoch", gridcolor="rgba(255,255,255,.06)"),
+                                    yaxis=dict(title="mAP@50 (%)", gridcolor="rgba(255,255,255,.06)"),
+                                )
+                            else:
+                                for col_name, label, color in [
+                                    ("accuracy", "Train Acc", "#00d4aa"),
+                                    ("val_accuracy", "Val Acc", "#ffd93d"),
+                                    ("acc", "Train Acc", "#00d4aa"),
+                                    ("val_acc", "Val Acc", "#ffd93d"),
+                                ]:
+                                    if col_name in df_log.columns:
+                                        vals = df_log[col_name]
+                                        if vals.max() <= 1.0:
+                                            vals = vals * 100
+                                        fig_acc.add_trace(go.Scatter(
+                                            x=df_log[x_col] if has_epoch else df_log.index,
+                                            y=vals, mode="lines+markers",
+                                            name=label, line=dict(color=color, width=2,
+                                            dash="dash" if "val" in col_name else "solid"),
+                                            marker=dict(size=4),
+                                        ))
+                                fig_acc.update_layout(
+                                    title="Accuracy over Epochs", template="plotly_dark",
+                                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                    height=280, margin=dict(l=0, r=0, t=40, b=0),
+                                    legend=dict(orientation="h", y=-0.2),
+                                    xaxis=dict(title="Epoch", gridcolor="rgba(255,255,255,.06)"),
+                                    yaxis=dict(title="Accuracy (%)", gridcolor="rgba(255,255,255,.06)"),
+                                )
                         st.plotly_chart(fig_acc, use_container_width=True, config={"displayModeBar": False})
 
                     # Download CSV of training history

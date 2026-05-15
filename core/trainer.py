@@ -49,7 +49,7 @@ except Exception as e:
     print(f"⚠️ PyTorch not available in trainer: {e}")
 
 from utils.config import Config
-from utils.metrics import MetricsTracker, compute_segmentation_metrics
+from utils.metrics import MetricsTracker, compute_segmentation_metrics, compute_detection_metrics
 from utils.callbacks import CallbackManager
 from utils.model_factory import ModelFactory
 from utils.data_factory import DataLoaderFactory
@@ -367,7 +367,10 @@ class AutoTrainer:
             # Scheduler step
             if self.scheduler:
                 if isinstance(self.scheduler, optim.lr_scheduler.ReduceLROnPlateau):
-                    self.scheduler.step(val_metrics.get('val_acc', 0))
+                    monitor_val = val_metrics.get('val_map50',
+                                  val_metrics.get('val_miou',
+                                  val_metrics.get('val_acc', 0)))
+                    self.scheduler.step(monitor_val)
                 else:
                     self.scheduler.step()
             
@@ -399,11 +402,15 @@ class AutoTrainer:
             
             # Move data to device
             inputs, targets = self._prepare_batch(batch)
-            
+
             # Forward pass
-            with autocast(device_type='cuda' if torch.cuda.is_available() else 'cpu', 
+            with autocast(device_type='cuda' if torch.cuda.is_available() else 'cpu',
                          enabled=self.config.use_mixed_precision):
-                outputs = self.model(inputs)
+                if self.config.dataset_info.task_type == "detection" and targets is not None:
+                    # Torchvision / SimpleDetector train mode: pass targets to model
+                    outputs = self.model(inputs, targets)
+                else:
+                    outputs = self.model(inputs)
                 loss = self._compute_loss(outputs, targets)
             
             # Backward pass
@@ -455,6 +462,8 @@ class AutoTrainer:
             metrics['train_dice']     = dice
             metrics['train_accuracy'] = miou  # compatibility alias
             self.logger.info(f"🚀 Training - Loss: {metrics['train_loss']:.6f}, mIoU: {miou:.4f} ({miou*100:.2f}%), Dice: {dice*100:.2f}%")
+        elif self.config.dataset_info.task_type == "detection":
+            self.logger.info(f"🚀 Training - Loss: {metrics['train_loss']:.6f} (detection)")
         
         self.callback_manager.on_train_epoch_end(metrics)
         return metrics
@@ -469,6 +478,8 @@ class AutoTrainer:
         seg_iou_sum = 0.0
         seg_dice_sum = 0.0
         seg_batches = 0
+        det_preds_all: list = []
+        det_targets_all: list = []
         
         self.callback_manager.on_val_epoch_begin()
         
@@ -485,7 +496,7 @@ class AutoTrainer:
                 total_loss += loss.item() * inputs.size(0)
                 total_samples += inputs.size(0)
                 
-                # Calculate accuracy for classification
+                # Calculate accuracy for classification / collect detection preds
                 if self.config.dataset_info.task_type == "classification":
                     _, predicted = torch.max(outputs.data, 1)
                     correct_predictions += (predicted == targets).sum().item()
@@ -498,11 +509,14 @@ class AutoTrainer:
                     seg_iou_sum  += miou
                     seg_dice_sum += dice
                     seg_batches  += 1
-        
+                elif self.config.dataset_info.task_type == "detection" and isinstance(outputs, list):
+                    det_preds_all.extend(outputs)
+                    det_targets_all.extend(targets)
+
         metrics = {
-            'val_loss': total_loss / total_samples,
+            'val_loss': total_loss / max(total_samples, 1),
         }
-        
+
         if self.config.dataset_info.task_type == "classification":
             accuracy = correct_predictions / total_samples
             metrics['val_acc'] = accuracy
@@ -527,40 +541,75 @@ class AutoTrainer:
             if miou > self.best_metric:
                 self.logger.info(f"🎉 New Best mIoU: {miou*100:.4f}%!")
                 self.best_metric = miou
-        # Update best metric
-        current_metric = metrics.get('val_acc', -metrics.get('val_loss', float('inf')))
-        if current_metric > self.best_metric:
-            self.best_metric = current_metric
+        elif self.config.dataset_info.task_type == "detection" and det_preds_all:
+            det_result = compute_detection_metrics(det_preds_all, det_targets_all, iou_threshold=0.5)
+            map50 = det_result.get('mAP@50', 0.0)
+            metrics['val_map50']   = map50
+            metrics['val_accuracy'] = map50  # compatibility alias
+            self.logger.info(f"✅ Validation - Loss: {metrics['val_loss']:.6f}, mAP@50: {map50:.4f} ({map50*100:.2f}%)")
+            if map50 > self.best_metric:
+                self.logger.info(f"🎉 New Best mAP@50: {map50*100:.4f}%!")
+                self.best_metric = map50
+        else:
+            # Update best metric for classification / unknown tasks
+            current_metric = metrics.get('val_acc', -metrics.get('val_loss', float('inf')))
+            if current_metric > self.best_metric:
+                self.best_metric = current_metric
         
         self.callback_manager.on_val_epoch_end(metrics)
         return metrics
     
-    def _prepare_batch(self, batch) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _prepare_batch(self, batch):
         """Prepare batch data for training."""
         if isinstance(batch, (list, tuple)) and len(batch) == 2:
             inputs, targets = batch
         else:
             inputs, targets = batch, None
-            
+
+        # Stack inputs if they arrived as a tuple/list of tensors (detection collate)
+        if isinstance(inputs, (list, tuple)):
+            inputs = torch.stack(list(inputs))
         inputs = inputs.to(self.device, non_blocking=True)
+
         if targets is not None:
-            targets = targets.to(self.device, non_blocking=True)
-            
+            if isinstance(targets, torch.Tensor):
+                targets = targets.to(self.device, non_blocking=True)
+            elif isinstance(targets, (list, tuple)):
+                # Detection targets: list of dicts with 'boxes', 'labels', etc.
+                moved = []
+                for t in targets:
+                    if isinstance(t, dict):
+                        moved.append({k: v.to(self.device) if isinstance(v, torch.Tensor) else v
+                                       for k, v in t.items()})
+                    elif isinstance(t, torch.Tensor):
+                        moved.append(t.to(self.device))
+                    else:
+                        moved.append(t)
+                targets = moved
+
         return inputs, targets
     
-    def _compute_loss(self, outputs, targets: torch.Tensor) -> torch.Tensor:
+    def _compute_loss(self, outputs, targets) -> torch.Tensor:
         """Compute loss based on task type."""
-        # Torchvision segmentation models (DeepLabV3, FCN) return a dict with 'out' and optional 'aux'
-        if isinstance(outputs, dict):
+        # Torchvision / SimpleDetector TRAIN mode: returns a dict of scalar loss tensors.
+        if isinstance(outputs, dict) and any(k.startswith('loss_') for k in outputs):
+            return sum(outputs.values())
+
+        # Torchvision SEGMENTATION models (DeepLabV3, FCN): dict with 'out'.
+        if isinstance(outputs, dict) and 'out' in outputs:
             main_out = outputs['out']
-            loss = self.criterion(main_out, targets) if self.criterion else main_out
+            loss = self.criterion(main_out, targets) if self.criterion else main_out.sum()
             if 'aux' in outputs and self.criterion:
                 loss = loss + 0.4 * self.criterion(outputs['aux'], targets)
             return loss
+
+        # Detection EVAL mode: model returns a list of prediction dicts — no loss.
+        if isinstance(outputs, list):
+            return torch.tensor(0.0, device=self.device)
+
         if self.criterion:
             return self.criterion(outputs, targets)
-        # For detection models, loss is computed within the model
-        return outputs
+        return torch.tensor(0.0, device=self.device)
     
     def _generate_results(self) -> TrainingResults:
         """Generate final training results with detailed accuracy analysis."""
@@ -572,7 +621,10 @@ class AutoTrainer:
         # Get best metrics — use mIoU for segmentation, accuracy for classification
         best_val_loss, best_loss_epoch = self.metrics_tracker.get_best('val_loss', 'min')
         is_segmentation = self.config.dataset_info.task_type == 'segmentation'
-        if is_segmentation and 'val_miou' in self.metrics_tracker.history:
+        is_detection    = self.config.dataset_info.task_type == 'detection'
+        if is_detection and 'val_map50' in self.metrics_tracker.history:
+            best_val_acc, best_acc_epoch = self.metrics_tracker.get_best('val_map50', 'max')
+        elif is_segmentation and 'val_miou' in self.metrics_tracker.history:
             best_val_acc, best_acc_epoch = self.metrics_tracker.get_best('val_miou', 'max')
         elif 'val_acc' in self.metrics_tracker.history:
             best_val_acc, best_acc_epoch = self.metrics_tracker.get_best('val_acc', 'max')

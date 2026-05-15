@@ -301,21 +301,115 @@ class DatasetAnalyzer:
         )
     
     def _analyze_detection_dataset(self, dataset_path: Path, images: List[Path], structure: Dict) -> DatasetInfo:
-        """Analyze detection dataset."""
-        # Simplified detection analysis
+        """Analyze detection dataset — real class count from annotations when available."""
+        sample_size, channels = self._analyze_sample_images(images[:10])
+        num_classes = None
+        class_names: List[str] = []
+        annotation_format = "unknown"
+
+        # ── 1. COCO JSON ─────────────────────────────────────────────────────
+        coco_candidates = list(dataset_path.rglob("*.json"))
+        for jf in coco_candidates[:5]:
+            try:
+                import json
+                data = json.loads(jf.read_text(encoding="utf-8"))
+                if "categories" in data:
+                    class_names = [c["name"] for c in data["categories"]]
+                    num_classes = len(class_names)
+                    annotation_format = "coco"
+                    break
+            except Exception:
+                pass
+
+        # ── 2. YOLO labels (classes.txt / data.yaml / scan label files) ──────
+        if num_classes is None:
+            # Try classes.txt
+            for classes_file in (dataset_path / "classes.txt",
+                                  dataset_path / "obj.names",
+                                  dataset_path / "data" / "obj.names"):
+                if classes_file.exists():
+                    lines = [l.strip() for l in classes_file.read_text().splitlines() if l.strip()]
+                    if lines:
+                        class_names = lines
+                        num_classes = len(class_names)
+                        annotation_format = "yolo"
+                        break
+
+        if num_classes is None:
+            # Try data.yaml
+            for yaml_file in dataset_path.rglob("data.yaml"):
+                try:
+                    import yaml as _yaml
+                    cfg = _yaml.safe_load(yaml_file.read_text())
+                    nc = cfg.get("nc") or cfg.get("num_classes")
+                    names = cfg.get("names", [])
+                    if nc:
+                        num_classes = int(nc)
+                        class_names = list(names) if names else [f"class_{i}" for i in range(num_classes)]
+                        annotation_format = "yolo"
+                        break
+                except Exception:
+                    pass
+
+        if num_classes is None:
+            # Scan YOLO label txt files for max class id
+            label_dirs = [dataset_path / "labels",
+                          dataset_path / "train" / "labels",
+                          dataset_path / "val"   / "labels"]
+            label_files: List[Path] = []
+            for d in label_dirs:
+                if d.is_dir():
+                    label_files.extend(list(d.glob("*.txt"))[:200])
+            if label_files:
+                max_id = 0
+                for lf in label_files[:200]:
+                    try:
+                        for line in lf.read_text().splitlines():
+                            parts = line.split()
+                            if parts:
+                                max_id = max(max_id, int(parts[0]))
+                    except Exception:
+                        pass
+                num_classes = max_id + 1
+                class_names = [f"class_{i}" for i in range(num_classes)]
+                annotation_format = "yolo"
+
+        # ── 3. Pascal VOC XML ─────────────────────────────────────────────────
+        if num_classes is None:
+            xml_files = list(dataset_path.rglob("*.xml"))[:200]
+            if xml_files:
+                try:
+                    import xml.etree.ElementTree as ET
+                    names_set: set = set()
+                    for xf in xml_files[:200]:
+                        tree = ET.parse(xf)
+                        for obj in tree.iterfind(".//object/name"):
+                            names_set.add(obj.text.strip())
+                    if names_set:
+                        class_names = sorted(names_set)
+                        num_classes = len(class_names)
+                        annotation_format = "voc"
+                except Exception:
+                    pass
+
+        # ── 4. Fallback ───────────────────────────────────────────────────────
+        if num_classes is None or num_classes < 1:
+            num_classes = 10
+            class_names = [f"class_{i}" for i in range(num_classes)]
+
         return DatasetInfo(
             task_type="detection",
-            num_classes=80,  # COCO default
+            num_classes=num_classes,
             num_samples=len(images),
-            class_names=[f"class_{i}" for i in range(80)],
-            class_distribution={f"class_{i}": len(images)//80 for i in range(80)},
-            image_size=(640, 640),
+            class_names=class_names,
+            class_distribution={n: len(images) // num_classes for n in class_names},
+            image_size=sample_size,
             image_stats={'mean': 0.5, 'std': 0.25},
             has_annotations=True,
-            annotation_format="coco",
-            recommended_batch_size=16,
-            estimated_training_time=self._estimate_training_time(len(images), 80),
-            channels=3,
+            annotation_format=annotation_format,
+            recommended_batch_size=8,
+            estimated_training_time=self._estimate_training_time(len(images), num_classes),
+            channels=channels,
             dataset_path=str(dataset_path)
         )
     
