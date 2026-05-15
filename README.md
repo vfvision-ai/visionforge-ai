@@ -775,48 +775,7 @@ import logging
 logging.basicConfig(level=logging.DEBUG)
 ```
 
-## 🎉 Recent Updates
 
-### HuggingFace Dataset Updates (January 2026)
-- **✅ Verified Public Datasets**: All HuggingFace datasets are now publicly accessible and verified
-- **🐾 Oxford-IIIT Pet Segmentation**: 7,390 images with 3-class segmentation masks (background, pet, border)
-- **🏙️ ADE20K Scene Parsing**: 22,210 images with 150 semantic categories (wall, building, sky, etc.)
-- **❌ Removed Inaccessible Datasets**: Cleaned up private/restricted datasets (Cityscapes, etc.)
-- **📊 Accurate Metadata**: All dataset configurations match official HuggingFace specifications
-- **🎯 Task-Specific Organization**: Clear separation of classification vs segmentation datasets
-
-### Code Cleanup & Organization (January 2026)
-- **🧹 Removed Temporary Files**: Cleaned up backup files, error reports, and temporary documentation
-- **📁 Organized Structure**: Removed old experiment directories (experiments/, experiments1/, is1/, cifar/)
-- **🗑️ Cache Cleanup**: Removed test_samples/ and uploads/ (auto-recreated as needed)
-- **✅ Preserved Core Functionality**: All essential code, data, and configurations intact
-- **📦 Streamlined Repository**: Cleaner codebase for easier maintenance and deployment
-
-### Model Architecture Upgrades (December 2025)
-- **🚀 EfficientNet-B0**: Replaced Simple CNN with state-of-the-art EfficientNet-B0 (40% smaller than ResNet-50, 8% more accurate)
-- **📱 MobileNetV3-Small**: Hardware-optimized neural architecture, 50% faster than MobileNetV2
-- **⚡ RegNetY-002**: Design space optimized model with better performance than EfficientNet at similar computational cost
-- **⚡ ConvNeXt-Tiny**: Modern ConvNet with Vision Transformer performance but CNN efficiency
-- **❌ Deprecated Models**: Removed Simple CNN and Sequential CNN - users guided to modern alternatives
-- **🎯 Smart Defaults**: EfficientNet-B0 now the default classification architecture
-- **🛡️ Error Prevention**: Fixed AttributeError with safe None checking for dataset names
-- **🎨 UI Improvements**: Added custom CSS to fix layout shrinking issues
-
-### Model Download & Naming System (October 2025)
-- **🔽 Model Download Options**: Individual downloads, bulk ZIP archives, JSON metadata export
-- **🏷️ Intelligent Model Naming**: `framework_architecture_backbone_dataset_task_timestamp.ext` format
-- **📊 Smart Dataset Extraction**: Automatic dataset name detection from paths and built-in datasets
-- **🔄 Multi-Framework Integration**: Seamless naming across PyTorch (.pt), TensorFlow (.keras), Scikit-learn (.joblib)
-- **📁 Comprehensive Path Generation**: Model, results, config, and log file organization
-- **🧹 Clean Filename Components**: Special character handling and extension management
-
-### Multi-Framework Support
-- **🔥 PyTorch Integration**: Full deep learning pipeline with GPU acceleration and custom architectures
-- **🧠 TensorFlow/Keras Support**: Production-ready models with Keras high-level API
-- **📊 Scikit-learn Integration**: Traditional ML algorithms for structured data and fast training
-- **🛠️ Framework Selection UI**: Easy dropdown selection with framework-specific recommendations
-- **🎯 Intelligent Auto-Selection**: Framework-aware model recommendations based on dataset characteristics
-- **🔄 Unified Training Pipeline**: Seamless training experience across all frameworks
 
 ### Enhanced Accuracy Tracking
 - **📊 Detailed Metrics**: 6-decimal precision accuracy tracking with percentage display
