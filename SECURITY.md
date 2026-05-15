@@ -239,12 +239,6 @@ Before deploying to production:
 - [Docker Security Best Practices](https://docs.docker.com/develop/security-best-practices/)
 - [Python Security Best Practices](https://python.readthedocs.io/en/stable/library/security_warnings.html)
 
-## 🙏 Acknowledgments
-
-We thank the following security researchers who have helped improve this project:
-
-- (Your name could be here!)
-
 ---
 
 **Last Updated**: May 13, 2026
