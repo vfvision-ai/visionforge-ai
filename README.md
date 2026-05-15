@@ -15,7 +15,7 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/visionforge.git
+git clone https://github.com/vfvision-ai/visionforge-ai.git
 cd visionforge
 
 # Deploy with one command
@@ -136,7 +136,7 @@ The comprehensive inference functionality is built into the web interface and `i
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/visionforge.git
+git clone https://github.com/vfvision-ai/visionforge-ai.git
 cd visionforge
 
 # Create conda environment
@@ -154,7 +154,7 @@ pip install -r requirements-dev.txt
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/visionforge.git
+git clone https://github.com/vfvision-ai/visionforge-ai.git
 cd visionforge
 
 # Create virtual environment
@@ -883,7 +883,7 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/visionforge.git
+git clone https://github.com/vfvision-ai/visionforge-ai.git
 cd visionforge
 
 # Create development environment
@@ -939,8 +939,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 📞 Support
 
 - **Documentation**: [Full Documentation](https://docs.example.com)
-- **Issues**: [GitHub Issues](https://github.com/YOUR_USERNAME/visionforge/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/YOUR_USERNAME/visionforge/discussions)
+- **Issues**: [GitHub Issues](https://github.com/vfvision-ai/visionforge-ai/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/vfvision-ai/visionforge-ai/discussions)
 - **Email**: support@example.com
 
 ## 🗺️ Roadmap

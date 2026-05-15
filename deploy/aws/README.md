@@ -38,7 +38,7 @@ Recommended instance types:
 ssh -i your-key.pem ec2-user@<EC2_PUBLIC_IP>
 
 # Download and run the bootstrap script
-curl -fsSL https://raw.githubusercontent.com/YOUR_ORG/visionforge/main/deploy/aws/setup-ec2.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/vfvision-ai/visionforge-ai/main/deploy/aws/setup-ec2.sh | sudo bash
 ```
 
 ---
@@ -47,7 +47,7 @@ curl -fsSL https://raw.githubusercontent.com/YOUR_ORG/visionforge/main/deploy/aw
 
 ```bash
 cd /opt/ml-platform
-sudo git clone https://github.com/YOUR_ORG/visionforge.git .
+sudo git clone https://github.com/vfvision-ai/visionforge-ai.git .
 
 # Configure environment
 sudo cp .env.example .env

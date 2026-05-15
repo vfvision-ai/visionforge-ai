@@ -13,7 +13,7 @@ We release patches for security vulnerabilities. Which versions are eligible for
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
-If you discover a security vulnerability, please send an email to **security@yourproject.com** (update with your actual email) with the following information:
+If you discover a security vulnerability, please send an email to **visionforge02@gmail.com** with the following information:
 
 ### What to Include
 

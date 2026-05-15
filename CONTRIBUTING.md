@@ -51,7 +51,7 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
 
 ```bash
 # Clone your fork
-git clone https://github.com/YOUR_USERNAME/visionforge.git
+git clone https://github.com/vfvision-ai/visionforge-ai.git
 cd visionforge
 
 # Create virtual environment

@@ -37,7 +37,7 @@ This guide provides comprehensive instructions for deploying VisionForge to prod
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/visionforge.git
+git clone https://github.com/vfvision-ai/visionforge-ai.git
 cd visionforge
 ```
 
