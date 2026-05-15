@@ -1,0 +1,208 @@
+# Project metadata for pip installation
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "visionforge"
+version = "2.0.0"
+description = "VisionForge — Train Vision Models Effortlessly. Automated computer vision training pipeline."
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "VisionForge Contributors", email = "your-email@example.com"}
+]
+keywords = [
+    "visionforge", "computer-vision", "machine-learning", "deep-learning",
+    "pytorch", "tensorflow", "model-training", "mlops", "automl"
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "tensorflow>=2.15.0",
+    "opencv-python",
+    "pillow>=9.5.0",
+    "albumentations>=1.3.0",
+    "scikit-learn>=1.3.0",
+    "scikit-image>=0.21.0",
+    "numpy>=1.24.0,<2.0.0",
+    "pandas>=2.0.0",
+    "optuna>=3.3.0",
+    "matplotlib>=3.7.0",
+    "seaborn>=0.12.0",
+    "plotly>=5.15.0",
+    "streamlit>=1.25.0",
+    "fastapi",
+    "uvicorn>=0.23.0",
+    "h5py>=3.9.0",
+    "pyarrow",
+    "datasets>=2.19.0",
+    "onnx>=1.14.0",
+    "onnxruntime>=1.15.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.7.0",
+    "isort>=5.12.0",
+    "flake8>=6.1.0",
+    "mypy>=1.5.0",
+    "pre-commit>=3.3.0",
+]
+
+gpu = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+]
+
+docs = [
+    "sphinx>=7.0.0",
+    "sphinx-rtd-theme>=1.3.0",
+    "sphinx-autodoc-typehints>=1.24.0",
+]
+
+all = [
+    "visionforge[dev,gpu,docs]",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/visionforge"
+Documentation = "https://visionforge.readthedocs.io"
+Repository = "https://github.com/yourusername/visionforge"
+"Bug Tracker" = "https://github.com/yourusername/visionforge/issues"
+
+[project.scripts]
+visionforge = "app:main"
+
+[tool.setuptools]
+packages = ["core", "utils", "tests"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md", "*.txt", "*.yml", "*.yaml"]
+
+# Configuration file for Black code formatter
+[tool.black]
+line-length = 88
+target-version = ['py38', 'py39', 'py310', 'py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # Exclude directories
+  __pycache__
+  | \.git
+  | \.venv
+  | venv
+  | \.mypy_cache
+  | \.pytest_cache
+  | build
+  | dist
+)/
+'''
+
+# Configuration for isort import sorting
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["core", "utils"]
+known_third_party = [
+    "torch", "torchvision", "numpy", "pandas", 
+    "opencv", "PIL", "matplotlib", "seaborn",
+    "streamlit", "plotly", "optuna"
+]
+
+# MyPy type checking configuration
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+# Ignore missing imports for some packages
+[[tool.mypy.overrides]]
+module = [
+    "cv2.*",
+    "torch.*",
+    "torchvision.*",
+    "numpy.*",
+    "pandas.*",
+    "matplotlib.*",
+    "seaborn.*",
+    "plotly.*",
+    "streamlit.*",
+    "optuna.*",
+    "albumentations.*",
+    "timm.*"
+]
+ignore_missing_imports = true
+
+# Pytest configuration
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--verbose",
+    "--tb=short",
+    "--strict-markers",
+    "--strict-config",
+    "--cov=core",
+    "--cov=utils",
+    "--cov-report=term-missing",
+    "--cov-report=html"
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests"
+]
+
+# Coverage configuration
+[tool.coverage.run]
+source = ["core", "utils"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__init__.py",
+    "*/examples.py",
+    "*/app.py"
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod"
+]

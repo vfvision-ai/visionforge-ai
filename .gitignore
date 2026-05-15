@@ -1,0 +1,91 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Virtual Environment
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+test_output/
+uploads/*.zip
+uploads/*.csv
+uploads/extracted/
+experiments/
+*.log
+
+# Development files
+debug_*.py
+test_*.py
+*_SUMMARY.md
+*_COMPLETE.md
+*_IMPLEMENTATION.md
+cleanup_script.sh
+app_minimal.py
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Model files (large)
+*.pt
+*.pth
+*.h5
+*.pkl
+
+# Docker
+.docker/
+docker-volumes/
+ssl/
+
+# Deployment
+*.env.local
+*.env.production
+.env
+
+# Backup folder
+_backup/
+
+# Runtime database
+ml_platform.db
+*.db
+
+# Experiment artefacts (user-generated, not source code)
+experiments_*/
+
+# Uploads/data directories
+uploads/
+
+# Downloaded dataset caches (large binary files)
+data/cifar-10-batches-py/
+data/cifar-100-python/
+data/MNIST/
+data/*.tar.gz
+data/*.zip
+
+# Application logs
+logs/
+*.log
+
+# Coverage / test artifacts
+.coverage
+htmlcov/
+.pytest_cache/

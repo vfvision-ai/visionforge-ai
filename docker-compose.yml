@@ -1,0 +1,185 @@
+# ════════════════════════════════════════════════════════════
+# VisionForge — Train Vision Models Effortlessly
+# Production Docker Compose Stack
+# ════════════════════════════════════════════════════════════
+#
+# Profiles:
+#   default    : Streamlit UI + FastAPI + Redis + SQLite
+#   production : adds Nginx reverse proxy + PostgreSQL
+#   gpu        : adds GPU passthrough to worker
+#
+# Quick start (local):
+#   docker compose up
+#
+# Production with nginx:
+#   docker compose --profile production up -d
+#
+# With GPU workers:
+#   docker compose --profile gpu up -d
+# ????????????????????????????????????????????????????????????
+
+x-common: &common
+  build: .
+  env_file: .env
+  volumes:
+    - ./data:/app/data
+    - ./experiments:/app/experiments
+    - ./uploads:/app/uploads
+    - ./logs:/app/logs
+  restart: unless-stopped
+  depends_on:
+    redis:
+      condition: service_healthy
+
+services:
+
+  # -- Streamlit Web UI ---------------------------------------
+  streamlit:
+    <<: *common
+    container_name: cv-streamlit
+    command: >
+      streamlit run app.py
+        --server.port=8501
+        --server.address=0.0.0.0
+        --server.headless=true
+        --server.enableCORS=false
+        --server.enableXsrfProtection=true
+    ports:
+      - 8501:8501
+    healthcheck:
+      test: [CMD, curl, -f, http://localhost:8501/_stcore/health]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2'
+
+  # -- FastAPI REST API ---------------------------------------
+  api:
+    <<: *common
+    container_name: cv-api
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --workers 2
+    ports:
+      - 8000:8000
+    healthcheck:
+      test: [CMD, curl, -f, http://localhost:8000/health]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1'
+
+  # -- Celery Worker (CPU) ------------------------------------
+  worker:
+    <<: *common
+    container_name: cv-worker
+    command: celery -A workers.celery_app worker --loglevel=info --concurrency=2 -Q training
+    healthcheck:
+      test: [CMD, celery, -A, workers.celery_app, inspect, ping]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: '4'
+
+  # -- Celery Worker (GPU)  only with --profile gpu ---------
+  worker-gpu:
+    <<: *common
+    container_name: cv-worker-gpu
+    command: celery -A workers.celery_app worker --loglevel=info --concurrency=1 -Q training,gpu
+    profiles: [gpu]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # -- Celery Flower monitoring -------------------------------
+  flower:
+    <<: *common
+    container_name: cv-flower
+    command: celery -A workers.celery_app flower --port=5555
+    ports:
+      - 5555:5555
+    healthcheck:
+      test: [CMD, curl, -f, http://localhost:5555]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # -- Redis (broker + cache) ---------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: cv-redis
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --save 60 1
+    ports:
+      - 6379:6379
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # -- PostgreSQL (production profile) -----------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: cv-postgres
+    env_file: .env
+    environment:
+      POSTGRES_DB: 
+      POSTGRES_USER: 
+      POSTGRES_PASSWORD: 
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - 5432:5432
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles: [production]
+    restart: unless-stopped
+
+  # -- Nginx Reverse Proxy (production profile) --------------
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: cv-nginx
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - streamlit
+      - api
+    profiles: [production]
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  postgres_data:
+  nginx_logs:

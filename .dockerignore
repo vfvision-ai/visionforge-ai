@@ -1,0 +1,61 @@
+# Docker ignore file for ML Platform
+# Ignore files and directories that shouldn't be included in Docker build context
+
+# Git
+.git
+.gitignore
+
+# Docker files
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+.venv
+venv/
+env/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Development files
+*.log
+*.tmp
+*.temp
+
+# Large data files (mount as volumes instead)
+data/*.tar.gz
+uploads/*.zip
+uploads/extracted/
+experiments/
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# Documentation (not needed in container)
+README.md
+HUGGINGFACE_INTEGRATION_GUIDE.md
+.github/
+
+# Test files
+test_*
+debug_*
+
+# Build artifacts
+build/
+dist/
+*.egg-info/

@@ -1,0 +1,8 @@
+# CPU-only variant — install AFTER requirements.txt
+# Lighter PyTorch without CUDA overhead (~800 MB vs ~3 GB)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.5.1+cpu
+torchvision==0.20.1+cpu
+
+# TensorFlow CPU-only
+tensorflow-cpu==2.15.0
