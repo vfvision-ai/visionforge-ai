@@ -9,6 +9,10 @@ import json
 
 try:
     import optuna
+    import warnings
+    # Suppress Optuna's verbose INFO progress and noisy FutureWarnings
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    warnings.filterwarnings("ignore", category=FutureWarning, module="optuna")
     OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False

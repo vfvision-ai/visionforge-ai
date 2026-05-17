@@ -284,6 +284,17 @@ def show_training():
             value=bool(pv.get("hpo", False)),
             help="Use Bayesian optimization to find best hyperparameters",
         )
+        if optimize_hyperparams:
+            try:
+                import optuna  # noqa: F401
+                st.info("✅ Optuna available — Bayesian HPO will run before the main training loop.")
+            except ImportError:
+                st.warning(
+                    "⚠️ **Optuna is not installed.** Hyperparameter optimization will be skipped "
+                    "and default parameters will be used.  \n"
+                    "Install it with: `pip install optuna==3.3.0`"
+                )
+                optimize_hyperparams = False  # disable silently-broken HPO
         n_trials = st.slider("Optimization Trials", 5, 50, 20) if optimize_hyperparams else 20
 
         st.markdown("#### 📁 Output Directory")

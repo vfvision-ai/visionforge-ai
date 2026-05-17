@@ -1304,8 +1304,15 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
             criterion = nn.CrossEntropyLoss(ignore_index=255)
         else:
             criterion = nn.CrossEntropyLoss(weight=class_weights_tensor)
-        optimizer = optim.Adam(model.parameters(), lr=0.001)
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+        # Use user-configured learning rate from session state (set by start_training_with_config)
+        _lr = st.session_state.get('override_learning_rate', 0.001)
+        _batch_size_override = st.session_state.get('override_batch_size')
+        if _batch_size_override:
+            batch_size = int(_batch_size_override)
+        optimizer = optim.Adam(model.parameters(), lr=_lr)
+        # Decay LR every step_size epochs; use the longer of 10 or max_epochs//5
+        _step_size = max(10, max_epochs // 5)
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=_step_size, gamma=0.1)
         
         # Setup callbacks with early stopping
         callback_manager = CallbackManager(framework="PyTorch")
@@ -1533,15 +1540,21 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
             if progress_ui:
                 progress = 0.4 + (epoch + 1) * 0.5 / max_epochs
                 progress_ui['overall_progress'].progress(min(progress, 0.9))
-                
+
                 elapsed = time.time() - training_start_time
+                # Per-epoch status line so users can see training is running
+                progress_ui['status_text'].text(
+                    f"🏋️ Epoch {epoch + 1}/{max_epochs} — "
+                    f"loss: {train_loss:.4f}  val_loss: {val_loss:.4f}  "
+                    f"val_acc: {val_acc:.1f}%"
+                )
                 progress_ui['current_epoch'].metric("Epoch", f"{epoch + 1} / {max_epochs}")
                 progress_ui['current_loss'].metric("Loss", f"{val_loss:.4f}")
                 progress_ui['current_acc'].metric("Accuracy", f"{val_acc:.1f}%")
                 progress_ui['elapsed_time'].metric("Time", "{:02d}:{:02d}:{:02d}".format(
                     int(elapsed // 3600), int((elapsed % 3600) // 60), int(elapsed % 60)
                 ))
-                
+
                 # Store metrics as dict so post-training charts can consume them
                 log_dict = {
                     'epoch':        epoch + 1,
@@ -1549,12 +1562,14 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
                     'val_loss':     round(val_loss, 4),
                 }
                 if task_type == 'segmentation':
-                    log_dict['train_miou'] = round(train_acc / 100.0, 4)
-                    log_dict['val_miou']   = round(val_acc  / 100.0, 4)
+                    log_dict['accuracy']     = round(train_acc / 100.0, 4)  # mIoU stored as accuracy
+                    log_dict['val_accuracy'] = round(val_acc   / 100.0, 4)
+                    log_dict['train_miou'] = log_dict['accuracy']
+                    log_dict['val_miou']   = log_dict['val_accuracy']
                     if val_dices:
                         log_dict['val_dice'] = round(val_dices[-1] / 100.0, 4)
                 elif task_type == 'detection':
-                    log_dict['val_map50']  = round(val_map50 / 100.0, 4)
+                    log_dict['val_map50']    = round(val_map50 / 100.0, 4)
                     log_dict['accuracy']     = 0.0
                     log_dict['val_accuracy'] = round(val_map50 / 100.0, 4)
                 else:
@@ -1562,9 +1577,12 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
                     log_dict['val_accuracy'] = round(val_acc   / 100.0, 4)
                 progress_ui['log_history'].append(log_dict)
                 recent = progress_ui['log_history'][-10:]
+                # Build log lines using .get() to handle all task types safely
                 log_lines = [
-                    f"Ep {e['epoch']:>3}: loss={e['loss']:.4f}  acc={e['accuracy']*100:.1f}%  "
-                    f"val_loss={e['val_loss']:.4f}  val_acc={e['val_accuracy']*100:.1f}%"
+                    f"Ep {e['epoch']:>3}: loss={e.get('loss', 0):.4f}  "
+                    f"acc={e.get('accuracy', 0)*100:.1f}%  "
+                    f"val_loss={e.get('val_loss', 0):.4f}  "
+                    f"val_acc={e.get('val_accuracy', 0)*100:.1f}%"
                     for e in recent
                 ]
                 progress_ui['training_log'].text("\n".join(log_lines))
