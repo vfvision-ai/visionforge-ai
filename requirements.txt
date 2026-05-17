@@ -68,6 +68,6 @@ passlib[bcrypt]==1.7.4
 # Utilities
 tqdm==4.65.0
 rich==13.4.0
-click==8.1.0
+click==8.1.7
 pyyaml==6.0
 jsonschema==4.18.0
