@@ -115,7 +115,8 @@ def update_job_history(
     db.commit()
 
 
-def fail_job(db: Session, job_id: str, error: str) -> Optional[TrainingJob]:    job = get_job(db, job_id)
+def fail_job(db: Session, job_id: str, error: str) -> Optional[TrainingJob]:
+    job = get_job(db, job_id)
     if job:
         job.status = JobStatus.FAILED
         job.completed_at = datetime.utcnow()
