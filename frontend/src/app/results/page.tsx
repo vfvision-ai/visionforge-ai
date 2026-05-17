@@ -17,19 +17,27 @@ export default function ResultsPage() {
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState('')
 
-  async function load() {
-    setLoading(true); setError('')
+  async function load(quiet = false) {
+    if (!quiet) { setLoading(true); setError('') }
     try {
       const data = await getJobs()
       setJobs(data.jobs)
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to load jobs')
+      if (!quiet) setError(e instanceof Error ? e.message : 'Failed to load jobs')
     } finally {
-      setLoading(false)
+      if (!quiet) setLoading(false)
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-refresh every 5s while any job is running/pending
+  useEffect(() => {
+    const active = jobs.some(j => j.status === 'running' || j.status === 'pending')
+    if (!active) return
+    const id = setInterval(() => load(true), 5000)
+    return () => clearInterval(id)
+  }, [jobs]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const visible = filter === 'all' ? jobs : jobs.filter(j => j.status === filter)
 
@@ -44,9 +52,17 @@ export default function ResultsPage() {
           </h1>
           <p className="text-sm text-slate-500 mt-1">All training jobs</p>
         </div>
-        <Button variant="secondary" size="sm" icon={<RefreshCw size={14} />} onClick={load} loading={loading}>
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          {jobs.some(j => j.status === 'running' || j.status === 'pending') && (
+            <span className="flex items-center gap-1.5 text-xs text-brand-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-brand-400 animate-pulse" />
+              Auto-refreshing
+            </span>
+          )}
+          <Button variant="secondary" size="sm" icon={<RefreshCw size={14} />} onClick={() => load()} loading={loading}>
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Filter tabs */}

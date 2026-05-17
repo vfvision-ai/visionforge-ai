@@ -1,11 +1,13 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useEffect, useRef, useState } from 'react'
 import {
   LayoutDashboard, Database, Cpu, BarChart3,
   Box, Zap, Settings, Github,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { getJobs } from '@/lib/api'
 
 const NAV = [
   { href: '/',           label: 'Dashboard',  icon: LayoutDashboard },
@@ -19,6 +21,20 @@ const NAV = [
 
 export default function Sidebar() {
   const path = usePathname()
+  const [runningCount, setRunningCount] = useState(0)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    async function poll() {
+      try {
+        const data = await getJobs({ limit: 100 })
+        setRunningCount(data.jobs.filter(j => j.status === 'running' || j.status === 'pending').length)
+      } catch { /* silent */ }
+    }
+    poll()
+    intervalRef.current = setInterval(poll, 8000)
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
+  }, [])
 
   return (
     <aside className="flex flex-col w-56 min-h-screen bg-surface-800 border-r border-surface-600">
@@ -32,6 +48,7 @@ export default function Sidebar() {
       <nav className="flex-1 py-4 space-y-0.5 px-2">
         {NAV.map(({ href, label, icon: Icon }) => {
           const active = href === '/' ? path === '/' : path.startsWith(href)
+          const showBadge = (href === '/training' || href === '/results') && runningCount > 0
           return (
             <Link
               key={href}
@@ -44,7 +61,13 @@ export default function Sidebar() {
               )}
             >
               <Icon size={16} />
-              {label}
+              <span className="flex-1">{label}</span>
+              {showBadge && (
+                <span className="flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-brand-400 animate-pulse" />
+                  <span className="text-xs text-brand-400 font-medium">{runningCount}</span>
+                </span>
+              )}
             </Link>
           )
         })}

@@ -1,6 +1,6 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { LayoutDashboard, Cpu, Box, Activity, ArrowRight, Plus } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { LayoutDashboard, Cpu, Box, Activity, ArrowRight, Plus, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { getJobs, getModels, getExperiments, getHealth } from '@/lib/api'
 import type { TrainingJob, HealthStatus } from '@/types'
@@ -10,22 +10,58 @@ import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import { formatDate, formatDuration } from '@/lib/utils'
 
+interface Toast { id: number; type: 'success' | 'error' | 'info'; message: string }
+
 export default function DashboardPage() {
   const [jobs,    setJobs]    = useState<TrainingJob[]>([])
   const [counts,  setCounts]  = useState({ experiments: 0, models: 0 })
   const [health,  setHealth]  = useState<HealthStatus | null>(null)
   const [loading, setLoading] = useState(true)
+  const [toasts,  setToasts]  = useState<Toast[]>([])
+  const prevStatuses = useRef<Record<string, string>>({})
+  const toastId      = useRef(0)
 
-  useEffect(() => {
-    Promise.all([getJobs({ limit: 10 }), getModels(), getExperiments(), getHealth()])
-      .then(([j, m, e, h]) => {
-        setJobs(j.jobs)
-        setCounts({ experiments: e.total, models: m.total })
-        setHealth(h)
+  function addToast(type: Toast['type'], message: string) {
+    const id = ++toastId.current
+    setToasts(t => [...t, { id, type, message }])
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 5000)
+  }
+
+  async function load(quiet = false) {
+    if (!quiet) setLoading(true)
+    try {
+      const [j, m, e, h] = await Promise.all([getJobs({ limit: 10 }), getModels(), getExperiments(), getHealth()])
+      setJobs(j.jobs)
+      setCounts({ experiments: e.total, models: m.total })
+      setHealth(h)
+      // Detect status transitions and notify
+      j.jobs.forEach(job => {
+        const prev = prevStatuses.current[job.id]
+        if (prev && prev !== job.status) {
+          if (job.status === 'completed')
+            addToast('success', `✅ Training complete — ${job.architecture} on ${job.dataset_name}`)
+          else if (job.status === 'failed')
+            addToast('error', `❌ Training failed — ${job.architecture}: ${job.error_message ?? 'unknown error'}`)
+          else if (job.status === 'running' && prev === 'pending')
+            addToast('info', `🚀 Training started — ${job.architecture} on ${job.dataset_name}`)
+        }
+        prevStatuses.current[job.id] = job.status
       })
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  }, [])
+    } catch { /* silent */ } finally {
+      if (!quiet) setLoading(false)
+    }
+  }
+
+  // Initial load
+  useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-refresh every 5s while any job is active
+  useEffect(() => {
+    const active = jobs.some(j => j.status === 'running' || j.status === 'pending')
+    if (!active) return
+    const id = setInterval(() => load(true), 5000)
+    return () => clearInterval(id)
+  }, [jobs]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const running   = jobs.filter(j => j.status === 'running').length
   const completed = jobs.filter(j => j.status === 'completed').length
@@ -47,6 +83,22 @@ export default function DashboardPage() {
             {health ? `System ${health.status}` : 'Checking…'}
           </span>
         </div>
+      </div>
+
+      {/* Toasts */}
+      <div className="fixed top-4 right-4 z-50 space-y-2 w-80">
+        {toasts.map(t => (
+          <div key={t.id} className={`flex items-start gap-3 px-4 py-3 rounded-lg shadow-lg text-sm backdrop-blur border transition-all ${
+            t.type === 'success' ? 'bg-green-500/10 border-green-500/30 text-green-300' :
+            t.type === 'error'   ? 'bg-red-500/10 border-red-500/30 text-red-300' :
+                                   'bg-brand-500/10 border-brand-500/30 text-brand-300'
+          }`}>
+            {t.type === 'success' ? <CheckCircle2 size={16} className="mt-0.5 shrink-0" /> :
+             t.type === 'error'   ? <XCircle size={16} className="mt-0.5 shrink-0" /> :
+                                    <Loader2 size={16} className="mt-0.5 shrink-0 animate-spin" />}
+            <span className="flex-1">{t.message}</span>
+          </div>
+        ))}
       </div>
 
       {/* Stats */}
@@ -78,7 +130,15 @@ export default function DashboardPage() {
       {/* Recent Jobs */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">Recent Jobs</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">Recent Jobs</h2>
+            {jobs.some(j => j.status === 'running' || j.status === 'pending') && (
+              <span className="flex items-center gap-1.5 text-xs text-brand-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-brand-400 animate-pulse" />
+                Live
+              </span>
+            )}
+          </div>
           <Link href="/results">
             <Button variant="ghost" size="sm">View all <ArrowRight size={12} /></Button>
           </Link>
