@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import secrets
-from typing import Generator
+from typing import Generator, Optional
 
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import APIKeyHeader
@@ -26,11 +26,11 @@ _API_KEY_NAME = "X-API-Key"
 _api_key_header = APIKeyHeader(name=_API_KEY_NAME, auto_error=False)
 
 # Load from environment.  In dev, set API_KEY=dev (or leave unset to skip auth).
-_API_KEY: str | None = os.getenv("API_KEY")
+_API_KEY: Optional[str] = os.getenv("API_KEY")
 _AUTH_ENABLED: bool  = bool(_API_KEY)
 
 
-def require_api_key(api_key: str | None = Security(_api_key_header)) -> str:
+def require_api_key(api_key: Optional[str] = Security(_api_key_header)) -> str:
     """
     FastAPI dependency that validates the X-API-Key header.
     Auth is disabled when API_KEY env var is not set (dev / local mode).

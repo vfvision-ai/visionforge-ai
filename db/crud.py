@@ -10,7 +10,7 @@ from db.models import Experiment, TrainingJob, ModelVersion, JobStatus
 
 
 # ── Experiments ───────────────────────────────────────────────────────────────
-def create_experiment(db: Session, name: str, description: str = "", tags: list | None = None) -> Experiment:
+def create_experiment(db: Session, name: str, description: str = "", tags: Optional[List] = None) -> Experiment:
     exp = Experiment(name=name, description=description, tags=tags or [])
     db.add(exp)
     db.flush()
@@ -85,7 +85,7 @@ def complete_job(
     job_id: str,
     results: Dict[str, Any],
     model_path: str,
-    training_history: list | None = None,
+    training_history: Optional[List] = None,
 ) -> Optional[TrainingJob]:
     job = get_job(db, job_id)
     if job:
