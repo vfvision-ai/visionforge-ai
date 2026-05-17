@@ -45,7 +45,10 @@ export default function InferencePage() {
       const form = new FormData()
       form.append('file', file)
       form.append('model_id', modelId)
-      const res = await fetch('/api/v1/inference/', { method: 'POST', body: form })
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY ?? ''
+      const headers: Record<string, string> = {}
+      if (apiKey) headers['X-API-Key'] = apiKey
+      const res = await fetch('/api/v1/inference/', { method: 'POST', body: form, headers })
       if (!res.ok) {
         const j = await res.json().catch(() => ({}))
         throw new Error((j as { detail?: string }).detail || `HTTP ${res.status}`)

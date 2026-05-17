@@ -171,6 +171,7 @@ services:
     environment:
       - API_URL=http://api:8000
       - NODE_ENV=production
+      - NEXT_PUBLIC_API_KEY=${API_KEY:-}
     ports:
       - 3000:3000
     depends_on:

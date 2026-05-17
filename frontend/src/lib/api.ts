@@ -3,11 +3,17 @@ import type {
 } from '@/types'
 
 const BASE = '/api/v1'
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? ''
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(init?.headers as Record<string, string>),
+  }
+  if (API_KEY) headers['X-API-Key'] = API_KEY
   const res = await fetch(`${BASE}${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    headers,
     cache: 'no-store',
   })
   if (!res.ok) {
