@@ -86,15 +86,19 @@ for i in {1..10}; do
     sleep 10
 done
 
-UI_URL="http://localhost:8501/_stcore/health"
-if curl -sf "$UI_URL" > /dev/null; then
-    echo "✅ Streamlit UI health check passed"
+FRONTEND_URL="http://localhost:3000"
+if curl -sf "$FRONTEND_URL" > /dev/null; then
+    echo "✅ Frontend health check passed"
 else
-    echo "⚠️  Streamlit UI not yet healthy — check logs: docker compose logs streamlit"
+    echo "⚠️  Frontend not yet healthy — check logs: docker compose logs frontend"
 fi
 
+PUBLIC_IP=$(curl -s --max-time 3 ifconfig.me || echo "<EC2-PUBLIC-IP>")
 echo ""
 echo "✅ Deployment complete!"
-echo "   Streamlit : http://$(curl -s ifconfig.me):80"
-echo "   API docs  : http://$(curl -s ifconfig.me):80/docs"
-echo "   Flower    : http://$(curl -s ifconfig.me):80/flower"
+echo "   Dashboard : http://${PUBLIC_IP}/"
+echo "   API docs  : http://${PUBLIC_IP}/docs"
+echo "   Health    : http://${PUBLIC_IP}/health"
+echo "   Flower    : http://${PUBLIC_IP}/flower/"
+echo ""
+echo "ℹ️  Ensure EC2 Security Group allows inbound TCP port 80 from 0.0.0.0/0"
