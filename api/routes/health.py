@@ -42,9 +42,10 @@ async def ready():
 # ── private ───────────────────────────────────────────────────────────────────
 def _check_db() -> str:
     try:
+        from sqlalchemy import text
         from db.database import engine
         with engine.connect() as conn:
-            conn.execute(engine.dialect.has_table(conn, "training_jobs") and "SELECT 1" or "SELECT 1")
+            conn.execute(text("SELECT 1"))
         return "ok"
     except Exception as exc:
         return f"error: {exc}"
