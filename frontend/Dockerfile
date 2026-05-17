@@ -4,6 +4,10 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
+# Build-time arg — needed so Next.js bakes it into the client bundle
+ARG NEXT_PUBLIC_API_KEY
+ENV NEXT_PUBLIC_API_KEY=$NEXT_PUBLIC_API_KEY
+
 COPY package.json package-lock.json* ./
 RUN npm install
 
