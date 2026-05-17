@@ -15,6 +15,7 @@ python-multipart==0.0.6
 # Async job queue
 celery==5.6.0
 redis==5.0.1
+flower==2.0.1
 
 # Database
 sqlalchemy==2.0.44
