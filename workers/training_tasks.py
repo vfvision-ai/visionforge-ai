@@ -75,6 +75,7 @@ def train_pytorch(
     try:
         from core.trainer import AutoTrainer
         from utils.config import Config
+        from utils.callbacks import DBProgressCallback
 
         os.makedirs(output_dir, exist_ok=True)
         config = Config(
@@ -90,6 +91,7 @@ def train_pytorch(
         ds_info = DatasetInfo(**dataset_config)
 
         trainer = AutoTrainer(config=config)
+        trainer.callback_manager.add_callback(DBProgressCallback(job_id))
         results = trainer.train(ds_info, framework="pytorch")
 
         model_path = results.get("model_path", "")
@@ -121,6 +123,7 @@ def train_tensorflow(
     try:
         from core.tensorflow_trainer import TensorFlowTrainer
         from core.dataset_analyzer import DatasetInfo
+        from utils.callbacks import DBProgressCallback
 
         os.makedirs(output_dir, exist_ok=True)
         ds_info = DatasetInfo(**dataset_config)
@@ -131,6 +134,8 @@ def train_tensorflow(
             learning_rate=hyperparams.get("lr", 0.001),
             output_dir=output_dir,
         )
+        if hasattr(trainer, 'callback_manager'):
+            trainer.callback_manager.add_callback(DBProgressCallback(job_id))
         results = trainer.train(ds_info, model_config=model_config)
 
         model_path = results.get("model_path", "")

@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from db.models import Experiment, TrainingJob, ModelVersion, JobStatus
 
@@ -97,8 +98,24 @@ def complete_job(
     return job
 
 
-def fail_job(db: Session, job_id: str, error: str) -> Optional[TrainingJob]:
+def update_job_history(
+    db: Session,
+    job_id: str,
+    epoch: int,
+    metrics: Dict[str, Any],
+) -> None:
+    """Append one epoch entry to training_history during live training."""
     job = get_job(db, job_id)
+    if not job:
+        return
+    history = list(job.training_history or [])
+    history.append({"epoch": epoch, **metrics})
+    job.training_history = history
+    flag_modified(job, "training_history")
+    db.commit()
+
+
+def fail_job(db: Session, job_id: str, error: str) -> Optional[TrainingJob]:    job = get_job(db, job_id)
     if job:
         job.status = JobStatus.FAILED
         job.completed_at = datetime.utcnow()

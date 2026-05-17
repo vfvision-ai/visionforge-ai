@@ -467,3 +467,26 @@ class PerformanceMonitor(Callback):
                     print(f"⚠️ Warning: Training appears to have stagnated (epoch {epoch+1})")
             else:
                 self.stagnation_count = 0
+
+
+class DBProgressCallback(Callback):
+    """
+    Writes per-epoch metrics to the DB so the UI can show live progress.
+    Safe to use in any framework — silently ignores DB errors so training
+    is never interrupted by a persistence failure.
+    """
+
+    def __init__(self, job_id: str):
+        self.job_id = job_id
+
+    def on_epoch_end(self, epoch: int, metrics: Dict[str, float], logs: Optional[Dict[str, Any]] = None):
+        try:
+            from db.database import db_session
+            from db.crud import update_job_history
+            with db_session() as db:
+                update_job_history(db, self.job_id, epoch + 1, {
+                    k: float(v) for k, v in metrics.items()
+                    if isinstance(v, (int, float))
+                })
+        except Exception as e:
+            print(f"DBProgressCallback: failed to write epoch {epoch+1} to DB: {e}")

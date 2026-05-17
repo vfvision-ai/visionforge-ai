@@ -147,7 +147,7 @@ export default function TrainingPage() {
             />
             <Input
               label="Learning Rate"
-              type="number" step="0.0001" min={0.00001} max={1}
+              type="number" step="any" min={0.000001} max={1}
               value={form.learning_rate}
               onChange={e => set('learning_rate', Number(e.target.value))}
             />
