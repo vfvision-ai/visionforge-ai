@@ -72,6 +72,7 @@ class JobResponse(BaseModel):
     framework: str
     dataset_name: str
     architecture: str
+    hyperparams: Optional[Dict[str, Any]]
     status: str
     celery_task_id: Optional[str]
     error_message: Optional[str]
@@ -81,6 +82,7 @@ class JobResponse(BaseModel):
     output_dir: Optional[str]
     model_path: Optional[str]
     results: Optional[Dict[str, Any]]
+    training_history: Optional[List[Dict[str, Any]]]
     duration_seconds: Optional[float]
 
 

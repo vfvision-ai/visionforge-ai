@@ -162,6 +162,28 @@ services:
     profiles: [production]
     restart: unless-stopped
 
+  # -- Next.js Frontend (production profile) ----------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cv-frontend
+    environment:
+      - API_URL=http://api:8000
+      - NODE_ENV=production
+    ports:
+      - 3000:3000
+    depends_on:
+      api:
+        condition: service_healthy
+    profiles: [production]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
   # -- Nginx Reverse Proxy (production profile) --------------
   nginx:
     image: nginx:1.25-alpine
@@ -174,7 +196,7 @@ services:
       - ./deploy/nginx/ssl:/etc/nginx/ssl:ro
       - nginx_logs:/var/log/nginx
     depends_on:
-      - streamlit
+      - frontend
       - api
     profiles: [production]
     restart: unless-stopped
