@@ -1,5 +1,5 @@
 import type {
-  TrainingJob, Experiment, ModelVersion, HealthStatus, TrainingSubmitPayload,
+  TrainingJob, Experiment, ModelVersion, HealthStatus, TrainingSubmitPayload, SystemInfo,
 } from '@/types'
 
 const BASE = '/api/v1'
@@ -28,6 +28,10 @@ export const getHealth = () =>
   fetch('/health', { cache: 'no-store' })
     .then(r => r.ok ? r.json() as Promise<HealthStatus> : Promise.reject(new Error(`${r.status}`)))
 
+export const getSystemInfo = () =>
+  fetch('/system-info', { cache: 'no-store' })
+    .then(r => r.ok ? r.json() as Promise<SystemInfo> : Promise.reject(new Error(`${r.status}`)))
+
 // ── Experiments ───────────────────────────────────────────────────────────────
 export const getExperiments = (skip = 0, limit = 100) =>
   request<{ experiments: Experiment[]; total: number }>(`/experiments/?skip=${skip}&limit=${limit}`)
@@ -53,9 +57,18 @@ export const submitJob = (data: TrainingSubmitPayload) =>
 export const cancelJob = (id: string) =>
   request<void>(`/training/${id}`, { method: 'DELETE' })
 
+export function downloadModelFile(jobId: string) {
+  window.open(`/api/v1/training/${jobId}/download`, '_blank')
+}
+export function downloadHistoryCSV(jobId: string) {
+  window.open(`/api/v1/training/${jobId}/history.csv`, '_blank')
+}
+
 // ── Models ────────────────────────────────────────────────────────────────────
 export const getModels = (skip = 0, limit = 100) =>
   request<{ models: ModelVersion[]; total: number }>(`/models/?skip=${skip}&limit=${limit}`)
 
 export const promoteModel = (id: string) =>
   request<ModelVersion>(`/models/${id}/promote`, { method: 'POST', body: '{}' })
+export const deleteModel  = (id: string) =>
+  request<void>(`/models/${id}`, { method: 'DELETE' })

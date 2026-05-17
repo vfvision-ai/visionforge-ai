@@ -32,7 +32,9 @@ export interface EpochMetric {
   train_miou?: number
   val_miou?: number
   val_dice?: number
+  train_dice?: number
   val_map50?: number
+  train_map50?: number
 }
 
 export interface Experiment {
@@ -58,14 +60,32 @@ export interface ModelVersion {
   val_loss: number | null
   is_production: boolean
   created_at: string
+  extra_metrics?: Record<string, number | string | null> | null
 }
 
 export interface HealthStatus {
-  status: 'ok' | 'degraded'
+  status: string
   version: string
   database: string
   broker: string
   timestamp: string
+}
+
+export interface SystemInfo {
+  os?: string
+  python?: string
+  pytorch?: string | null
+  cuda_available?: boolean
+  cuda_version?: string
+  gpu_name?: string
+  gpu_count?: number
+  tensorflow?: string | null
+  sklearn?: string | null
+  opencv?: string | null
+  optuna?: string | null
+  ram_total_gb?: number
+  ram_used_gb?: number
+  platform?: string
 }
 
 export interface TrainingSubmitPayload {

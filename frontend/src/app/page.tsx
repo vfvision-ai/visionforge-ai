@@ -1,9 +1,9 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { LayoutDashboard, Cpu, Box, Activity, ArrowRight, Plus, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
+import { LayoutDashboard, Cpu, Box, Activity, ArrowRight, Plus, CheckCircle2, XCircle, Loader2, Server } from 'lucide-react'
 import Link from 'next/link'
-import { getJobs, getModels, getExperiments, getHealth } from '@/lib/api'
-import type { TrainingJob, HealthStatus } from '@/types'
+import { getJobs, getModels, getExperiments, getHealth, getSystemInfo } from '@/lib/api'
+import type { TrainingJob, HealthStatus, SystemInfo } from '@/types'
 import { StatCard } from '@/components/Card'
 import Card from '@/components/Card'
 import Badge from '@/components/Badge'
@@ -16,6 +16,7 @@ export default function DashboardPage() {
   const [jobs,    setJobs]    = useState<TrainingJob[]>([])
   const [counts,  setCounts]  = useState({ experiments: 0, models: 0 })
   const [health,  setHealth]  = useState<HealthStatus | null>(null)
+  const [sysInfo, setSysInfo] = useState<SystemInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [toasts,  setToasts]  = useState<Toast[]>([])
   const prevStatuses = useRef<Record<string, string>>({})
@@ -34,6 +35,7 @@ export default function DashboardPage() {
       setJobs(j.jobs)
       setCounts({ experiments: e.total, models: m.total })
       setHealth(h)
+      getSystemInfo().then(setSysInfo).catch(() => {})
       // Detect status transitions and notify
       j.jobs.forEach(job => {
         const prev = prevStatuses.current[job.id]
@@ -126,6 +128,36 @@ export default function DashboardPage() {
           </Link>
         ))}
       </div>
+
+      {/* System Status */}
+      {sysInfo && (
+        <Card>
+          <h2 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
+            <Server size={15} className="text-slate-400" /> System Status
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: 'PyTorch',    ok: !!sysInfo.pytorch_version,    detail: sysInfo.pytorch_version ?? 'not installed' },
+              { label: 'CUDA',       ok: !!sysInfo.cuda_available,     detail: sysInfo.cuda_available ? (sysInfo.gpu_name ?? sysInfo.cuda_version ?? 'available') : 'CPU only' },
+              { label: 'TensorFlow', ok: !!sysInfo.tensorflow_version, detail: sysInfo.tensorflow_version ?? 'not installed' },
+              { label: 'Optuna',     ok: !!sysInfo.optuna_version,     detail: sysInfo.optuna_version ?? 'not installed' },
+            ].map(s => (
+              <div key={s.label} className="flex items-center gap-2 bg-surface-900 rounded-lg p-3">
+                <span className={`w-2 h-2 rounded-full shrink-0 ${s.ok ? 'bg-green-400' : 'bg-slate-600'}`} />
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-white">{s.label}</p>
+                  <p className="text-xs text-slate-500 truncate">{s.detail}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          {sysInfo.ram_total_gb && (
+            <div className="mt-3 text-xs text-slate-500">
+              RAM: {sysInfo.ram_used_gb?.toFixed(1)} / {sysInfo.ram_total_gb.toFixed(1)} GB used
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* Recent Jobs */}
       <div>

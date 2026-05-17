@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import io
+import csv
 import os
 import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from api.schemas import TrainingSubmit, JobResponse, JobListResponse
@@ -122,6 +125,56 @@ def cancel_job(
 
     crud.cancel_job(db, job_id)
     db.commit()
+
+
+@router.get("/{job_id}/download", summary="Download the trained model file")
+def download_model_file(
+    job_id: str,
+    db: Session = Depends(get_db),
+):
+    job = crud.get_job(db, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id!r} not found.")
+    if not job.model_path or not os.path.isfile(job.model_path):
+        raise HTTPException(status_code=404, detail="Model file not found on disk.")
+    return FileResponse(
+        job.model_path,
+        filename=os.path.basename(job.model_path),
+        media_type="application/octet-stream",
+    )
+
+
+@router.get("/{job_id}/history.csv", summary="Download training history as CSV")
+def download_history_csv(
+    job_id: str,
+    db: Session = Depends(get_db),
+):
+    job = crud.get_job(db, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id!r} not found.")
+    history = job.training_history or []
+    if not history:
+        raise HTTPException(status_code=404, detail="No training history available.")
+
+    # Collect all column keys
+    all_keys: list[str] = ["epoch"]
+    for row in history:
+        for k in row.keys():
+            if k != "epoch" and k not in all_keys:
+                all_keys.append(k)
+
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=all_keys, extrasaction="ignore")
+    writer.writeheader()
+    for i, row in enumerate(history):
+        writer.writerow({"epoch": row.get("epoch", i + 1), **row})
+
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=history_{job_id[:8]}.csv"},
+    )
 
 
 # ── private helpers ───────────────────────────────────────────────────────────

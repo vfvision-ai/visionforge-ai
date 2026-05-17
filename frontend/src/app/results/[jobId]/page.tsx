@@ -1,14 +1,14 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, XCircle, Loader2 } from 'lucide-react'
+import { ArrowLeft, XCircle, Loader2, Download, FileText, CheckCircle2 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import Card from '@/components/Card'
-import { getJob, cancelJob } from '@/lib/api'
+import { getJob, cancelJob, downloadModelFile, downloadHistoryCSV } from '@/lib/api'
 import { formatDate, formatDuration, pct } from '@/lib/utils'
 import type { TrainingJob } from '@/types'
 
@@ -139,6 +139,31 @@ export default function JobDetailPage() {
           </p>
         </div>
       </div>
+
+      {/* Completion banner */}
+      {job.status === 'completed' && (
+        <div className="flex items-center gap-4 p-4 rounded-xl bg-green-500/10 border border-green-500/20">
+          <CheckCircle2 size={22} className="text-green-400 shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-green-300">Training complete!</p>
+            <p className="text-xs text-green-400/70 mt-0.5">
+              {bestMetric != null ? `Best ${metricLabel}: ${pct(bestMetric)}` : 'Model saved successfully'}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            {job.model_path && (
+              <Button size="sm" icon={<Download size={13} />} onClick={() => downloadModelFile(jobId)}>
+                Download Model
+              </Button>
+            )}
+            {(job.training_history?.length ?? 0) > 0 && (
+              <Button variant="secondary" size="sm" icon={<FileText size={13} />} onClick={() => downloadHistoryCSV(jobId)}>
+                Export CSV
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Error message */}
       {job.error_message && (

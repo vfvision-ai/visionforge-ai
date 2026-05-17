@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import {
   LayoutDashboard, Database, Cpu, BarChart3,
-  Box, Zap, Settings, Github,
+  Box, Zap, Settings, Github, GitCompare,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getJobs } from '@/lib/api'
@@ -14,6 +14,7 @@ const NAV = [
   { href: '/dataset',    label: 'Dataset',    icon: Database         },
   { href: '/training',   label: 'Training',   icon: Cpu              },
   { href: '/results',    label: 'Results',    icon: BarChart3        },
+  { href: '/compare',    label: 'Compare',    icon: GitCompare       },
   { href: '/models',     label: 'Models',     icon: Box              },
   { href: '/inference',  label: 'Inference',  icon: Zap              },
   { href: '/settings',   label: 'Settings',   icon: Settings         },

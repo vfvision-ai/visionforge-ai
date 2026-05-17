@@ -1,7 +1,9 @@
-"""Health-check and readiness endpoints."""
+"""Health-check, readiness, and system-info endpoints."""
 
 from __future__ import annotations
 
+import platform
+import sys
 from datetime import datetime, timezone
 
 from fastapi import APIRouter
@@ -37,6 +39,70 @@ async def ready():
     if _check_db() != "ok":
         return JSONResponse(status_code=503, content={"status": "not ready", "reason": "database unavailable"})
     return {"status": "ready"}
+
+
+@router.get("/system-info", summary="System hardware and library info")
+async def system_info():
+    """Returns hardware specs and ML library availability for the dashboard status panel."""
+    info: dict = {
+        "os": platform.system(),
+        "python": sys.version.split()[0],
+        "platform": platform.machine(),
+    }
+
+    # PyTorch
+    try:
+        import torch
+        info["pytorch"] = torch.__version__
+        info["cuda_available"] = torch.cuda.is_available()
+        if torch.cuda.is_available():
+            info["cuda_version"] = torch.version.cuda
+            info["gpu_name"] = torch.cuda.get_device_name(0)
+            info["gpu_count"] = torch.cuda.device_count()
+        else:
+            info["cuda_available"] = False
+    except ImportError:
+        info["pytorch"] = None
+        info["cuda_available"] = False
+
+    # TensorFlow
+    try:
+        import tensorflow as tf  # noqa: F401
+        info["tensorflow"] = tf.__version__
+    except ImportError:
+        info["tensorflow"] = None
+
+    # Scikit-learn
+    try:
+        import sklearn
+        info["sklearn"] = sklearn.__version__
+    except ImportError:
+        info["sklearn"] = None
+
+    # OpenCV
+    try:
+        import cv2
+        info["opencv"] = cv2.__version__
+    except ImportError:
+        info["opencv"] = None
+
+    # Optuna
+    try:
+        import optuna
+        info["optuna"] = optuna.__version__
+    except ImportError:
+        info["optuna"] = None
+
+    # RAM
+    try:
+        import psutil
+        vm = psutil.virtual_memory()
+        info["ram_total_gb"] = round(vm.total / 1024**3, 1)
+        info["ram_used_gb"]  = round(vm.used  / 1024**3, 1)
+    except ImportError:
+        pass
+
+    return info
 
 
 # ── private ───────────────────────────────────────────────────────────────────
