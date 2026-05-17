@@ -37,119 +37,144 @@ def show_results():
                  st.session_state.get("current_step", 4))
 
     # Check for recent training completion in session state
-    if hasattr(st.session_state, 'training_completed') and st.session_state.training_completed:
-        if hasattr(st.session_state, 'training_results') and st.session_state.training_results:
-            st.markdown("""
-            <div style="background:rgba(0,212,170,.12);border:1px solid rgba(0,212,170,.35);
-                 border-radius:12px;padding:1rem 1.4rem;margin-bottom:1.2rem;display:flex;align-items:center;gap:.8rem">
-              <span style="font-size:1.5rem">🎉</span>
-              <div>
-                <div style="font-weight:700;font-size:1rem">Training completed successfully!</div>
-                <div style="font-size:.85rem;color:#a0a0b8;margin-top:.15rem">Latest results shown below — scroll down to download your model.</div>
-              </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Display session state results immediately
-            results = st.session_state.training_results
+    if st.session_state.get('training_completed') and st.session_state.get('training_results'):
+        st.markdown("""
+        <div style="background:rgba(0,212,170,.12);border:1px solid rgba(0,212,170,.35);
+             border-radius:12px;padding:1rem 1.4rem;margin-bottom:1.2rem;display:flex;align-items:center;gap:.8rem">
+          <span style="font-size:1.5rem">🎉</span>
+          <div>
+            <div style="font-weight:700;font-size:1rem">Training completed successfully!</div>
+            <div style="font-size:.85rem;color:#a0a0b8;margin-top:.15rem">Latest results shown below — scroll down to download your model.</div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-            accuracy = results.get('best_accuracy', 0)
-            if accuracy <= 1:
-                accuracy *= 100
-            loss      = results.get('best_loss', 0)
-            train_t   = results.get('training_time', 0)
-            framework = results.get('framework', 'Unknown')
+        # Display session state results immediately
+        results = st.session_state.training_results
 
-            # Detect task type for right metric label
-            task_type = 'classification'
-            if hasattr(st.session_state, 'dataset_info') and st.session_state.dataset_info:
-                task_type = getattr(st.session_state.dataset_info, 'task_type', 'classification')
+        accuracy = results.get('best_accuracy', 0)
+        if accuracy <= 1:
+            accuracy *= 100
+        loss      = results.get('best_loss', 0)
+        train_t   = results.get('training_time', 0)
+        framework = results.get('framework', 'Unknown')
 
-            is_segmentation = task_type == 'segmentation'
-            is_detection    = task_type == 'detection'
-            if is_detection:
-                acc_label = 'Best mAP@50'
-                acc_icon  = '🎯'
-            elif is_segmentation:
-                acc_label = 'Best mIoU'
-                acc_icon  = '🗺️'
+        # Detect task type for right metric label
+        task_type = 'classification'
+        if st.session_state.get('dataset_info'):
+            task_type = getattr(st.session_state.dataset_info, 'task_type', 'classification')
+
+        is_segmentation = task_type == 'segmentation'
+        is_detection    = task_type == 'detection'
+        if is_detection:
+            acc_label = 'Best mAP@50'
+            acc_icon  = '🎯'
+        elif is_segmentation:
+            acc_label = 'Best mIoU'
+            acc_icon  = '🗺️'
+        else:
+            acc_label = 'Final Accuracy'
+            acc_icon  = '🎯'
+
+        # Also pull mIoU/Dice / mAP@50 if present in results
+        miou_val  = results.get('best_miou', results.get('val_miou', None))
+        dice_val  = results.get('best_dice', results.get('val_dice', None))
+        map50_val = results.get('best_map50', results.get('val_map50', None))
+
+        # Beautiful metric row
+        mc1, mc2, mc3, mc4 = st.columns(4)
+        with mc1:
+            metric_card(acc_label, f"{accuracy:.2f}%", icon=acc_icon, color="purple")
+        with mc2:
+            if is_segmentation and dice_val is not None:
+                d = dice_val * 100 if dice_val <= 1 else dice_val
+                metric_card("Best Dice", f"{d:.2f}%", icon="🎲", color="teal")
+            elif is_detection and map50_val is not None:
+                p = map50_val * 100 if map50_val <= 1 else map50_val
+                metric_card("mAP@50", f"{p:.2f}%", icon="📦", color="teal")
             else:
-                acc_label = 'Final Accuracy'
-                acc_icon  = '🎯'
+                metric_card("Final Loss", f"{loss:.4f}", icon="📉", color="teal")
+        with mc3:
+            metric_card("Training Time", f"{train_t:.1f}s", icon="⏱️", color="yellow")
+        with mc4:
+            metric_card("Framework", framework, icon="🛠️", color="purple")
 
-            # Also pull mIoU/Dice / mAP@50 if present in results
-            miou_val  = results.get('best_miou', results.get('val_miou', None))
-            dice_val  = results.get('best_dice', results.get('val_dice', None))
-            map50_val = results.get('best_map50', results.get('val_map50', None))
+        # ── Training Curves ────────────────────────────────────────────────
+        log_hist = st.session_state.get("training_log_history", [])
+        # Also try training_history inside results dict
+        if not log_hist and "training_history" in results:
+            log_hist = results["training_history"]
 
-            # Beautiful metric row
-            mc1, mc2, mc3, mc4 = st.columns(4)
-            with mc1:
-                metric_card(acc_label, f"{accuracy:.2f}%", icon=acc_icon, color="purple")
-            with mc2:
-                if is_segmentation and dice_val is not None:
-                    d = dice_val * 100 if dice_val <= 1 else dice_val
-                    metric_card("Best Dice", f"{d:.2f}%", icon="🎲", color="teal")
-                elif is_detection and map50_val is not None:
-                    p = map50_val * 100 if map50_val <= 1 else map50_val
-                    metric_card("mAP@50", f"{p:.2f}%", icon="📦", color="teal")
-                else:
-                    metric_card("Final Loss", f"{loss:.4f}", icon="📉", color="teal")
-            with mc3:
-                metric_card("Training Time", f"{train_t:.1f}s", icon="⏱️", color="yellow")
-            with mc4:
-                metric_card("Framework", framework, icon="🛠️", color="purple")
+        if log_hist:
+            st.markdown("<br>", unsafe_allow_html=True)
+            section("📊", "Training Curves")
+            try:
+                df_log = pd.DataFrame(log_hist)
+                has_epoch = "epoch" in df_log.columns
+                x_col = "epoch" if has_epoch else df_log.index
 
-            # ── Training Curves ────────────────────────────────────────────────
-            log_hist = st.session_state.get("training_log_history", [])
-            # Also try training_history inside results dict
-            if not log_hist and "training_history" in results:
-                log_hist = results["training_history"]
+                curve_c1, curve_c2 = st.columns(2)
+                with curve_c1:
+                    fig_loss = go.Figure()
+                    if "loss" in df_log.columns:
+                        fig_loss.add_trace(go.Scatter(
+                            x=df_log[x_col] if has_epoch else df_log.index,
+                            y=df_log["loss"], mode="lines+markers",
+                            name="Train Loss", line=dict(color="#6c63ff", width=2),
+                            marker=dict(size=4),
+                        ))
+                    if "val_loss" in df_log.columns:
+                        fig_loss.add_trace(go.Scatter(
+                            x=df_log[x_col] if has_epoch else df_log.index,
+                            y=df_log["val_loss"], mode="lines+markers",
+                            name="Val Loss", line=dict(color="#ff6b6b", width=2, dash="dash"),
+                            marker=dict(size=4),
+                        ))
+                    fig_loss.update_layout(
+                        title="Loss over Epochs", template="plotly_dark",
+                        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                        height=280, margin=dict(l=0, r=0, t=40, b=0),
+                        legend=dict(orientation="h", y=-0.2),
+                        xaxis=dict(title="Epoch", gridcolor="rgba(255,255,255,.06)"),
+                        yaxis=dict(title="Loss", gridcolor="rgba(255,255,255,.06)"),
+                    )
+                    st.plotly_chart(fig_loss, use_container_width=True, config={"displayModeBar": False})
 
-            if log_hist:
-                st.markdown("<br>", unsafe_allow_html=True)
-                section("📊", "Training Curves")
-                try:
-                    df_log = pd.DataFrame(log_hist)
-                    has_epoch = "epoch" in df_log.columns
-                    x_col = "epoch" if has_epoch else df_log.index
-
-                    curve_c1, curve_c2 = st.columns(2)
-                    with curve_c1:
-                        fig_loss = go.Figure()
-                        if "loss" in df_log.columns:
-                            fig_loss.add_trace(go.Scatter(
-                                x=df_log[x_col] if has_epoch else df_log.index,
-                                y=df_log["loss"], mode="lines+markers",
-                                name="Train Loss", line=dict(color="#6c63ff", width=2),
-                                marker=dict(size=4),
-                            ))
-                        if "val_loss" in df_log.columns:
-                            fig_loss.add_trace(go.Scatter(
-                                x=df_log[x_col] if has_epoch else df_log.index,
-                                y=df_log["val_loss"], mode="lines+markers",
-                                name="Val Loss", line=dict(color="#ff6b6b", width=2, dash="dash"),
-                                marker=dict(size=4),
-                            ))
-                        fig_loss.update_layout(
-                            title="Loss over Epochs", template="plotly_dark",
+                with curve_c2:
+                    fig_acc = go.Figure()
+                    # Segmentation: plot mIoU / Dice curves
+                    if is_segmentation:
+                        for col_name, label, color in [
+                            ("train_miou", "Train mIoU", "#00d4aa"),
+                            ("val_miou",   "Val mIoU",   "#ffd93d"),
+                            ("train_dice", "Train Dice", "#6c63ff"),
+                            ("val_dice",   "Val Dice",   "#ff6b6b"),
+                        ]:
+                            if col_name in df_log.columns:
+                                vals = df_log[col_name]
+                                if vals.max() <= 1.0:
+                                    vals = vals * 100
+                                fig_acc.add_trace(go.Scatter(
+                                    x=df_log[x_col] if has_epoch else df_log.index,
+                                    y=vals, mode="lines+markers",
+                                    name=label,
+                                    line=dict(color=color, width=2,
+                                              dash="dash" if "val" in col_name else "solid"),
+                                    marker=dict(size=4),
+                                ))
+                        fig_acc.update_layout(
+                            title="mIoU & Dice over Epochs", template="plotly_dark",
                             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                             height=280, margin=dict(l=0, r=0, t=40, b=0),
                             legend=dict(orientation="h", y=-0.2),
                             xaxis=dict(title="Epoch", gridcolor="rgba(255,255,255,.06)"),
-                            yaxis=dict(title="Loss", gridcolor="rgba(255,255,255,.06)"),
+                            yaxis=dict(title="Score (%)", gridcolor="rgba(255,255,255,.06)"),
                         )
-                        st.plotly_chart(fig_loss, use_container_width=True, config={"displayModeBar": False})
-
-                    with curve_c2:
-                        fig_acc = go.Figure()
-                        # Segmentation: plot mIoU / Dice curves
-                        if is_segmentation:
+                    else:
+                        if is_detection:
+                            # Detection: plot mAP@50 curve
                             for col_name, label, color in [
-                                ("train_miou", "Train mIoU", "#00d4aa"),
-                                ("val_miou",   "Val mIoU",   "#ffd93d"),
-                                ("train_dice", "Train Dice", "#6c63ff"),
-                                ("val_dice",   "Val Dice",   "#ff6b6b"),
+                                ("val_map50", "Val mAP@50", "#ffd93d"),
                             ]:
                                 if col_name in df_log.columns:
                                     vals = df_log[col_name]
@@ -158,277 +183,256 @@ def show_results():
                                     fig_acc.add_trace(go.Scatter(
                                         x=df_log[x_col] if has_epoch else df_log.index,
                                         y=vals, mode="lines+markers",
-                                        name=label,
-                                        line=dict(color=color, width=2,
-                                                  dash="dash" if "val" in col_name else "solid"),
+                                        name=label, line=dict(color=color, width=2),
                                         marker=dict(size=4),
                                     ))
                             fig_acc.update_layout(
-                                title="mIoU & Dice over Epochs", template="plotly_dark",
+                                title="mAP@50 over Epochs", template="plotly_dark",
                                 paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                                 height=280, margin=dict(l=0, r=0, t=40, b=0),
                                 legend=dict(orientation="h", y=-0.2),
                                 xaxis=dict(title="Epoch", gridcolor="rgba(255,255,255,.06)"),
-                                yaxis=dict(title="Score (%)", gridcolor="rgba(255,255,255,.06)"),
+                                yaxis=dict(title="mAP@50 (%)", gridcolor="rgba(255,255,255,.06)"),
                             )
                         else:
-                            if is_detection:
-                                # Detection: plot mAP@50 curve
-                                for col_name, label, color in [
-                                    ("val_map50", "Val mAP@50", "#ffd93d"),
-                                ]:
-                                    if col_name in df_log.columns:
-                                        vals = df_log[col_name]
-                                        if vals.max() <= 1.0:
-                                            vals = vals * 100
-                                        fig_acc.add_trace(go.Scatter(
-                                            x=df_log[x_col] if has_epoch else df_log.index,
-                                            y=vals, mode="lines+markers",
-                                            name=label, line=dict(color=color, width=2),
-                                            marker=dict(size=4),
-                                        ))
-                                fig_acc.update_layout(
-                                    title="mAP@50 over Epochs", template="plotly_dark",
-                                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                                    height=280, margin=dict(l=0, r=0, t=40, b=0),
-                                    legend=dict(orientation="h", y=-0.2),
-                                    xaxis=dict(title="Epoch", gridcolor="rgba(255,255,255,.06)"),
-                                    yaxis=dict(title="mAP@50 (%)", gridcolor="rgba(255,255,255,.06)"),
-                                )
-                            else:
-                                for col_name, label, color in [
-                                    ("accuracy", "Train Acc", "#00d4aa"),
-                                    ("val_accuracy", "Val Acc", "#ffd93d"),
-                                    ("acc", "Train Acc", "#00d4aa"),
-                                    ("val_acc", "Val Acc", "#ffd93d"),
-                                ]:
-                                    if col_name in df_log.columns:
-                                        vals = df_log[col_name]
-                                        if vals.max() <= 1.0:
-                                            vals = vals * 100
-                                        fig_acc.add_trace(go.Scatter(
-                                            x=df_log[x_col] if has_epoch else df_log.index,
-                                            y=vals, mode="lines+markers",
-                                            name=label, line=dict(color=color, width=2,
-                                            dash="dash" if "val" in col_name else "solid"),
-                                            marker=dict(size=4),
-                                        ))
-                                fig_acc.update_layout(
-                                    title="Accuracy over Epochs", template="plotly_dark",
-                                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                                    height=280, margin=dict(l=0, r=0, t=40, b=0),
-                                    legend=dict(orientation="h", y=-0.2),
-                                    xaxis=dict(title="Epoch", gridcolor="rgba(255,255,255,.06)"),
-                                    yaxis=dict(title="Accuracy (%)", gridcolor="rgba(255,255,255,.06)"),
-                                )
-                        st.plotly_chart(fig_acc, use_container_width=True, config={"displayModeBar": False})
-
-                    # Download CSV of training history
-                    csv_data = df_log.to_csv(index=False)
-                    st.download_button(
-                        "⬇️ Download Training History (CSV)",
-                        data=csv_data,
-                        file_name="training_history.csv",
-                        mime="text/csv",
-                    )
-                except Exception as _e:
-                    logger.warning("Could not render training curves: %s", _e)
-
-            # Quick model download for recently trained model
-            if 'model_path' in results and results['model_path']:
-                st.markdown("<br>", unsafe_allow_html=True)
-                section("⬇️", "Quick Download – Just Trained Model")
-
-                model_path = Path(results['model_path'])
-                if model_path.exists():
-                    file_size_mb = model_path.stat().st_size / (1024 * 1024)
-
-                    col1, col2, col3 = st.columns([2, 1, 1])
-                    with col1:
-                        st.markdown(f"""
-                        <div class="cv-card" style="border-left:3px solid var(--accent)">
-                          <div style="font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary);margin-bottom:.5rem">Model File</div>
-                          <div style="font-weight:700;margin-bottom:.3rem">📄 {model_path.name}</div>
-                          <div style="font-size:.85rem;color:var(--text-secondary)">📊 {file_size_mb:.2f} MB &nbsp;·&nbsp; 🎯 {framework}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                    with col2:
-                        st.code(str(model_path), language="text")
-
-                    with col3:
-                        try:
-                            with open(model_path, 'rb') as f:
-                                model_data = f.read()
-
-                            st.download_button(
-                                label="⬇️ Download Model",
-                                data=model_data,
-                                file_name=model_path.name,
-                                mime='application/octet-stream',
-                                help=f"Download the just-trained {framework} model"
+                            for col_name, label, color in [
+                                ("accuracy", "Train Acc", "#00d4aa"),
+                                ("val_accuracy", "Val Acc", "#ffd93d"),
+                                ("acc", "Train Acc", "#00d4aa"),
+                                ("val_acc", "Val Acc", "#ffd93d"),
+                            ]:
+                                if col_name in df_log.columns:
+                                    vals = df_log[col_name]
+                                    if vals.max() <= 1.0:
+                                        vals = vals * 100
+                                    fig_acc.add_trace(go.Scatter(
+                                        x=df_log[x_col] if has_epoch else df_log.index,
+                                        y=vals, mode="lines+markers",
+                                        name=label, line=dict(color=color, width=2,
+                                        dash="dash" if "val" in col_name else "solid"),
+                                        marker=dict(size=4),
+                                    ))
+                            fig_acc.update_layout(
+                                title="Accuracy over Epochs", template="plotly_dark",
+                                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                height=280, margin=dict(l=0, r=0, t=40, b=0),
+                                legend=dict(orientation="h", y=-0.2),
+                                xaxis=dict(title="Epoch", gridcolor="rgba(255,255,255,.06)"),
+                                yaxis=dict(title="Accuracy (%)", gridcolor="rgba(255,255,255,.06)"),
                             )
-                        except Exception as e:
-                            st.error(f"❌ Cannot read model file: {e}")
-                else:
-                    st.warning(f"⚠️ Model file not found: `{results['model_path']}`")
-            
-            # Test samples generation and download section
-            st.markdown("---")
-            st.subheader("🔬 Test Samples for Evaluation")
-            
-            # Check if test samples already exist
-            test_samples_dir = Path("test_samples")
-            existing_samples = list(test_samples_dir.glob("*.png")) + list(test_samples_dir.glob("*.jpg")) if test_samples_dir.exists() else []
-            labels_csv = test_samples_dir / "labels.csv" if test_samples_dir.exists() else None
-            
-            if existing_samples and labels_csv and labels_csv.exists():
-                st.success(f"✅ Found {len(existing_samples)} existing test samples!")
-                
-                # Display existing samples info
+                    st.plotly_chart(fig_acc, use_container_width=True, config={"displayModeBar": False})
+
+                # Download CSV of training history
+                csv_data = df_log.to_csv(index=False)
+                st.download_button(
+                    "⬇️ Download Training History (CSV)",
+                    data=csv_data,
+                    file_name="training_history.csv",
+                    mime="text/csv",
+                )
+            except Exception as _e:
+                logger.warning("Could not render training curves: %s", _e)
+
+        # Quick model download for recently trained model
+        if 'model_path' in results and results['model_path']:
+            st.markdown("<br>", unsafe_allow_html=True)
+            section("⬇️", "Quick Download – Just Trained Model")
+
+            model_path = Path(results['model_path'])
+            if model_path.exists():
+                file_size_mb = model_path.stat().st_size / (1024 * 1024)
+
                 col1, col2, col3 = st.columns([2, 1, 1])
                 with col1:
-                    st.write(f"📁 **Location**: `{test_samples_dir}`")
-                    st.write(f"🖼️ **Images**: {len(existing_samples)} samples")
-                    st.write(f"📊 **Labels**: `labels.csv`")
-                
+                    st.markdown(f"""
+                    <div class="cv-card" style="border-left:3px solid var(--accent)">
+                      <div style="font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary);margin-bottom:.5rem">Model File</div>
+                      <div style="font-weight:700;margin-bottom:.3rem">📄 {model_path.name}</div>
+                      <div style="font-size:.85rem;color:var(--text-secondary)">📊 {file_size_mb:.2f} MB &nbsp;·&nbsp; 🎯 {framework}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
                 with col2:
-                    # Download existing samples as ZIP
-                    if st.button("📦 Download Existing Samples"):
-                        try:
-                            import zipfile
-                            import io
-                            
-                            # Create ZIP in memory
-                            zip_buffer = io.BytesIO()
-                            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-                                # Add all image files
-                                for img_path in existing_samples:
-                                    zip_file.write(img_path, img_path.name)
-                                # Add labels CSV
-                                if labels_csv.exists():
-                                    zip_file.write(labels_csv, labels_csv.name)
-                            
-                            zip_buffer.seek(0)
-                            st.download_button(
-                                label="⬇️ Download ZIP",
-                                data=zip_buffer.getvalue(),
-                                file_name="test_samples.zip",
-                                mime="application/zip",
-                                help="Download all test samples and labels as ZIP file"
-                            )
-                        except Exception as e:
-                            st.error(f"❌ Failed to create ZIP: {e}")
-                
+                    st.code(str(model_path), language="text")
+
                 with col3:
-                    # Option to regenerate samples
-                    if st.button("🔄 Regenerate Samples"):
-                        st.session_state.regenerate_samples = True
-                        st_rerun()
+                    try:
+                        with open(model_path, 'rb') as f:
+                            model_data = f.read()
+
+                        st.download_button(
+                            label="⬇️ Download Model",
+                            data=model_data,
+                            file_name=model_path.name,
+                            mime='application/octet-stream',
+                            help=f"Download the just-trained {framework} model"
+                        )
+                    except Exception as e:
+                        st.error(f"❌ Cannot read model file: {e}")
+            else:
+                st.warning(f"⚠️ Model file not found: `{results['model_path']}`")
             
-            # Test samples configuration
-            st.markdown("**🎛️ Configure Test Samples:**")
+        # Test samples generation and download section
+        st.markdown("---")
+        st.subheader("🔬 Test Samples for Evaluation")
             
-            col1, col2, col3 = st.columns([1, 1, 2])
+        # Check if test samples already exist
+        test_samples_dir = Path("test_samples")
+        existing_samples = list(test_samples_dir.glob("*.png")) + list(test_samples_dir.glob("*.jpg")) if test_samples_dir.exists() else []
+        labels_csv = test_samples_dir / "labels.csv" if test_samples_dir.exists() else None
+            
+        if existing_samples and labels_csv and labels_csv.exists():
+            st.success(f"✅ Found {len(existing_samples)} existing test samples!")
+                
+            # Display existing samples info
+            col1, col2, col3 = st.columns([2, 1, 1])
             with col1:
-                num_samples = st.number_input(
-                    "Number of Samples",
-                    min_value=1,
-                    max_value=500,
-                    value=50,
-                    step=10,
-                    help="How many test samples to extract"
-                )
-            
+                st.write(f"📁 **Location**: `{test_samples_dir}`")
+                st.write(f"🖼️ **Images**: {len(existing_samples)} samples")
+                st.write(f"📊 **Labels**: `labels.csv`")
+                
             with col2:
-                image_format = st.selectbox(
-                    "Image Format",
-                    options=["PNG", "JPG"],
-                    index=0,
-                    help="Output image format"
-                )
-            
+                # Download existing samples as ZIP
+                if st.button("📦 Download Existing Samples"):
+                    try:
+                        import zipfile
+                        import io
+                            
+                        # Create ZIP in memory
+                        zip_buffer = io.BytesIO()
+                        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                            # Add all image files
+                            for img_path in existing_samples:
+                                zip_file.write(img_path, img_path.name)
+                            # Add labels CSV
+                            if labels_csv.exists():
+                                zip_file.write(labels_csv, labels_csv.name)
+                            
+                        zip_buffer.seek(0)
+                        st.download_button(
+                            label="⬇️ Download ZIP",
+                            data=zip_buffer.getvalue(),
+                            file_name="test_samples.zip",
+                            mime="application/zip",
+                            help="Download all test samples and labels as ZIP file"
+                        )
+                    except Exception as e:
+                        st.error(f"❌ Failed to create ZIP: {e}")
+                
             with col3:
-                generate_samples = st.button(
-                    "🔬 Generate Test Samples",
-                    help="Extract test samples from the dataset for evaluation",
-                    type="primary"
-                )
+                # Option to regenerate samples
+                if st.button("🔄 Regenerate Samples"):
+                    st.session_state.regenerate_samples = True
+                    st_rerun()
             
-            # Generate samples if requested
-            if generate_samples or st.session_state.get('regenerate_samples', False):
-                if st.session_state.get('regenerate_samples', False):
-                    st.session_state.regenerate_samples = False
+        # Test samples configuration
+        st.markdown("**🎛️ Configure Test Samples:**")
+            
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            num_samples = st.number_input(
+                "Number of Samples",
+                min_value=1,
+                max_value=500,
+                value=50,
+                step=10,
+                help="How many test samples to extract"
+            )
+            
+        with col2:
+            image_format = st.selectbox(
+                "Image Format",
+                options=["PNG", "JPG"],
+                index=0,
+                help="Output image format"
+            )
+            
+        with col3:
+            generate_samples = st.button(
+                "🔬 Generate Test Samples",
+                help="Extract test samples from the dataset for evaluation",
+                type="primary"
+            )
+            
+        # Generate samples if requested
+        if generate_samples or st.session_state.get('regenerate_samples', False):
+            if st.session_state.get('regenerate_samples', False):
+                st.session_state.regenerate_samples = False
                 
-                if hasattr(st.session_state, 'dataset_info') and st.session_state.dataset_info:
-                    # Validate that dataset_info is the correct type (not training_results)
-                    dataset_info = st.session_state.dataset_info
-                    
-                    # Check if it's a dict with training results keys (wrong type)
-                    if isinstance(dataset_info, dict) and 'best_accuracy' in dataset_info:
-                        st.error("❌ Dataset information not available. The system has training results but no dataset info.")
-                        st.info("💡 This usually happens after training. Please select and analyze a dataset first.")
-                    else:
-                        with st.spinner(f"🔬 Generating {num_samples} test samples..."):
-                            try:
-                                output_dir = "."  # Use current directory as base
-                                save_test_samples_for_evaluation(
-                                    dataset_info, 
-                                    output_dir, 
-                                    num_samples=num_samples,
-                                    image_format=image_format.lower()
-                                )
-                                st.success(f"✅ Generated {num_samples} test samples!")
-                                st.balloons()
-                                
-                                # Auto-download after generation
-                                import time
-                                time.sleep(1)  # Small delay for file system
-                                st_rerun()  # Refresh to show download options
-                                
-                            except Exception as e:
-                                st.error(f"❌ Failed to generate test samples: {str(e)}")
-                                logger.error(f"Test sample generation failed: {str(e)}")
-                else:
-                    st.error("❌ No dataset information found. Please train a model first.")
-            
-            # Show model configuration if available
-            if hasattr(st.session_state, 'model_config') and st.session_state.model_config:
-                st.subheader("🧠 Model Configuration")
-                config = st.session_state.model_config
-                st.json(config.__dict__ if hasattr(config, '__dict__') else config)
-            
-            # Show dataset information if available
-            if hasattr(st.session_state, 'dataset_info') and st.session_state.dataset_info:
-                st.subheader("📊 Dataset Information")
+            if st.session_state.get('dataset_info'):
                 dataset_info = st.session_state.dataset_info
-                
-                info_col1, info_col2, info_col3 = st.columns(3)
-                with info_col1:
-                    st.metric("Task Type", dataset_info.task_type.title())
-                    st.metric("Number of Classes", dataset_info.num_classes)
-                with info_col2:
-                    st.metric("Number of Samples", dataset_info.num_samples)
                     
-                    # Handle different dataset types
-                    if hasattr(dataset_info, 'image_size') and dataset_info.image_size:
-                        if isinstance(dataset_info.image_size, (list, tuple)) and len(dataset_info.image_size) >= 2:
-                            st.metric("Image Size", f"{dataset_info.image_size[0]}×{dataset_info.image_size[1]}")
-                        else:
-                            st.metric("Image Size", str(dataset_info.image_size))
-                    elif hasattr(dataset_info, 'is_text_dataset') and dataset_info.is_text_dataset:
-                        st.metric("Data Type", "Text Dataset")
+                # Check if it's a dict with training results keys (wrong type)
+                if isinstance(dataset_info, dict) and 'best_accuracy' in dataset_info:
+                    st.error("❌ Dataset information not available. The system has training results but no dataset info.")
+                    st.info("💡 This usually happens after training. Please select and analyze a dataset first.")
+                else:
+                    with st.spinner(f"🔬 Generating {num_samples} test samples..."):
+                        try:
+                            output_dir = "."  # Use current directory as base
+                            save_test_samples_for_evaluation(
+                                dataset_info, 
+                                output_dir, 
+                                num_samples=num_samples,
+                                image_format=image_format.lower()
+                            )
+                            st.success(f"✅ Generated {num_samples} test samples!")
+                            st.balloons()
+                            st_rerun()  # Refresh to show download options
+                                
+                        except Exception as e:
+                            st.error(f"❌ Failed to generate test samples: {str(e)}")
+                            logger.error(f"Test sample generation failed: {str(e)}")
+            else:
+                st.error("❌ No dataset information found. Please train a model first.")
+            
+        # Show model configuration if available
+        if st.session_state.get('model_config'):
+            st.subheader("🧠 Model Configuration")
+            config = st.session_state.model_config
+            try:
+                import json as _json
+                # Convert to dict safely, handling non-serializable fields
+                raw = config.__dict__ if hasattr(config, '__dict__') else config
+                safe = _json.loads(_json.dumps(raw, default=str))
+                st.json(safe)
+            except Exception:
+                st.write(config)
+            
+        # Show dataset information if available
+        if st.session_state.get('dataset_info'):
+            dataset_info = st.session_state.dataset_info
+                
+            info_col1, info_col2, info_col3 = st.columns(3)
+            with info_col1:
+                st.metric("Task Type", dataset_info.task_type.title())
+                st.metric("Number of Classes", dataset_info.num_classes)
+            with info_col2:
+                st.metric("Number of Samples", dataset_info.num_samples)
+                    
+                # Handle different dataset types
+                if hasattr(dataset_info, 'image_size') and dataset_info.image_size:
+                    if isinstance(dataset_info.image_size, (list, tuple)) and len(dataset_info.image_size) >= 2:
+                        st.metric("Image Size", f"{dataset_info.image_size[0]}×{dataset_info.image_size[1]}")
                     else:
-                        st.metric("Image Size", "N/A")
-                with info_col3:
-                    st.metric("Batch Size", dataset_info.recommended_batch_size)
-                    st.metric("Estimated Time", f"{dataset_info.estimated_training_time:.1f}s")
+                        st.metric("Image Size", str(dataset_info.image_size))
+                elif hasattr(dataset_info, 'is_text_dataset') and dataset_info.is_text_dataset:
+                    st.metric("Data Type", "Text Dataset")
+                else:
+                    st.metric("Image Size", "N/A")
+            with info_col3:
+                st.metric("Batch Size", dataset_info.recommended_batch_size)
+                st.metric("Estimated Time", f"{dataset_info.estimated_training_time:.1f}s")
             
             st.markdown("---")
         else:
             st.warning("🤔 Training completed but no results found in session state.")
     else:
-        st.info("ℹ️ No recent training detected. Train a model to see results here.")
+        st.info(
+            "ℹ️ No training results in this session yet. "
+            "Complete the Training step (Step 4) to see results here, "
+            "or load a historical experiment from the directory browser below."
+        )
     
     # Dynamic results directory detection and selection
     st.subheader("📁 Historical Results")
@@ -1571,7 +1575,7 @@ def show_results():
                             
                             # Load and preprocess image
                             pil_img = PILImage.open(uploaded_img).convert('RGB')
-                            st.image(pil_img, caption="Uploaded Image", use_column_width=True)
+                            st.image(pil_img, caption="Uploaded Image", use_container_width=True)
                             
                             transform_inf = transforms.Compose([
                                 transforms.Resize(img_size_inf),

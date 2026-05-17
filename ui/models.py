@@ -1156,7 +1156,7 @@ def show_model_selection():
                 st.info("💡 Try running dataset analysis first or check if the task type is supported.")
         
         # Display and edit model details if config exists
-        if hasattr(st.session_state, 'model_config') and st.session_state.model_config is not None:
+        if st.session_state.get('model_config') is not None:
             model_config = st.session_state.model_config
             
             st.subheader("📝 Editable Model Details")

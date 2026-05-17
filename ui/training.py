@@ -362,9 +362,15 @@ def show_training():
 
         est_time = getattr(ds, 'estimated_training_time', None)
         est_str = ""
-        if est_time:
-            est_total = est_time * max_epochs / max(getattr(ds, 'num_samples', 1000) / 1000, 1)
-            est_str = f"⏱️ Estimated: <b>~{est_total:.0f}s</b>"
+        if est_time and est_time > 0:
+            # estimated_training_time is per-epoch time in seconds; scale by epochs
+            est_total = est_time * max_epochs
+            if est_total < 60:
+                est_str = f"⏱️ Estimated: <b>~{est_total:.0f}s</b>"
+            elif est_total < 3600:
+                est_str = f"⏱️ Estimated: <b>~{est_total/60:.1f} min</b>"
+            else:
+                est_str = f"⏱️ Estimated: <b>~{est_total/3600:.1f} hr</b>"
 
         st.markdown(f"""
         <div class="cv-card" style="border-left:3px solid var(--accent);margin-bottom:.8rem">

@@ -84,8 +84,9 @@ def _preprocess_image_pil(img, input_size: int = 224, grayscale: bool = False):
             transforms.Normalize([0.5], [0.5]),
         ])
     else:
+        # Convert to RGB before the transform pipeline (transforms.RGB() doesn't exist)
+        img = img.convert("RGB")
         transform = transforms.Compose([
-            transforms.RGB(),  # ensure 3-channel
             transforms.Resize((input_size, input_size)),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
@@ -392,7 +393,7 @@ def show_inference():
         col = cols[idx % len(cols)]
 
         with col:
-            st.image(img, caption=file.name, use_column_width=True)
+            st.image(img, caption=file.name, use_container_width=True)
 
             with st.spinner("Running…"):
                 try:
@@ -407,7 +408,7 @@ def show_inference():
                                 cam = _compute_gradcam(model, tensor, None, device)
                                 if cam is not None:
                                     overlay = _overlay_heatmap(img, cam)
-                                    st.image(overlay, caption="GradCAM", use_column_width=True)
+                                    st.image(overlay, caption="GradCAM", use_container_width=True)
                             except Exception as ge:
                                 st.caption(f"GradCAM unavailable: {ge}")
 

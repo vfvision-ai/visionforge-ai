@@ -1087,7 +1087,7 @@ def show_dataset_analysis():
         
         # Analysis button
         # Check if we have either a dataset path or a built-in dataset selected
-        has_builtin_dataset = hasattr(st.session_state, 'selected_builtin_dataset') and st.session_state.selected_builtin_dataset
+        has_builtin_dataset = bool(st.session_state.get('selected_builtin_dataset'))
         analyze_disabled = not (current_dataset or has_builtin_dataset)
         
         if has_builtin_dataset:
@@ -2186,7 +2186,7 @@ def show_dataset_analysis():
     with col2:
         section("📊", "Analysis Results")
 
-        if hasattr(st.session_state, 'dataset_info') and st.session_state.dataset_info is not None:
+        if st.session_state.get('dataset_info') is not None:
             info = st.session_state.dataset_info
             framework = st.session_state.get('selected_framework', 'PyTorch')
 
@@ -2429,7 +2429,7 @@ def show_dataset_analysis():
                             _src = _PIL.open(_src).convert("RGB")
                         grid_cols[k % 4].image(
                             transform(_src),
-                            use_column_width=True,
+                            use_container_width=True,
                             caption=f"Aug #{k + 1}",
                         )
 

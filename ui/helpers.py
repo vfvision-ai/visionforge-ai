@@ -296,11 +296,9 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
     import shutil
     import logging
     from datetime import datetime
-    
-    # Setup detailed logging
-    logging.basicConfig(level=logging.DEBUG)
+
     logger = logging.getLogger(__name__)
-    
+
     logger.info(f"=== PYTORCH TRAINING START ===")
     logger.info(f"max_epochs: {max_epochs}")
     logger.info(f"optimize_hyperparams: {optimize_hyperparams}")
@@ -382,6 +380,9 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
         # Setup device
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         logger.info(f"Using device: {device}")
+        # Enable cudnn auto-tuner for faster GPU convolutions
+        if torch.cuda.is_available():
+            torch.backends.cudnn.benchmark = True
         
         # Check if this is a built-in dataset (torchvision support)
         is_builtin_dataset = hasattr(dataset_info, 'is_builtin') and dataset_info.is_builtin
@@ -1309,7 +1310,8 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
         _batch_size_override = st.session_state.get('override_batch_size')
         if _batch_size_override:
             batch_size = int(_batch_size_override)
-        optimizer = optim.Adam(model.parameters(), lr=_lr)
+        # AdamW is generally better than Adam (weight decay decoupled from gradient)
+        optimizer = optim.AdamW(model.parameters(), lr=_lr, weight_decay=1e-4)
         # Decay LR every step_size epochs; use the longer of 10 or max_epochs//5
         _step_size = max(10, max_epochs // 5)
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=_step_size, gamma=0.1)
@@ -1374,6 +1376,7 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
         val_mious = []
         val_dices = []
         val_map50s = []   # detection mAP@50 per epoch
+        val_map50 = 0.0   # initialise so status_text never uses undefined var
 
         best_accuracy = 0.0
         best_loss = float('inf')
@@ -1398,6 +1401,7 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
                     loss_dict = model(data, target)   # train mode → loss dict
                     loss = sum(loss_dict.values())
                     loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                     optimizer.step()
                     running_loss += loss.item()
                     total += data.size(0)
@@ -1411,6 +1415,7 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
                     raw_out = output['out'] if isinstance(output, dict) else output
                     loss = criterion(raw_out, target)
                     loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                     optimizer.step()
                     running_loss += loss.item()
                     if task_type == 'segmentation':
@@ -1819,16 +1824,14 @@ def start_pytorch_training(max_epochs: int, optimize_hyperparams: bool, output_d
 
 def start_tensorflow_training(max_epochs: int, optimize_hyperparams: bool, output_dir: str, progress_ui=None):
     """Start TensorFlow/Keras training process with progress tracking."""
-    
+
     import time
     import logging
     import os
     import shutil
-    
-    # Setup detailed logging
-    logging.basicConfig(level=logging.DEBUG)
+
     logger = logging.getLogger(__name__)
-    
+
     # Log function entry
     logger.info(f"=== TENSORFLOW TRAINING START ===")
     logger.info(f"max_epochs: {max_epochs}")
@@ -3899,7 +3902,11 @@ def start_tensorflow_training(max_epochs: int, optimize_hyperparams: bool, outpu
         for i, (train_acc, val_acc, train_loss, val_loss) in enumerate(zip(train_acc_history, val_acc_history, train_loss_history, val_loss_history)):
             progress = 0.5 + (i + 1) * 0.4 / len(train_acc_history)
             progress_bar.progress(min(progress, 0.9))
-            status_text.text(f"🚀 **Epoch {i+1}/{len(train_acc_history)} - Val Accuracy: {val_acc:.4f}**")
+            status_text.text(
+                f"🏋️ Epoch {i+1}/{len(train_acc_history)} — "
+                f"loss: {train_loss:.4f}  val_loss: {val_loss:.4f}  "
+                f"val_acc: {val_acc*100:.1f}%"
+            )
             
             # Update detailed metrics if using new progress UI
             if progress_ui:
@@ -3949,8 +3956,7 @@ def start_tensorflow_training(max_epochs: int, optimize_hyperparams: bool, outpu
                                         xaxis_title='Epoch', yaxis_title='Accuracy (%)',
                                         showlegend=True, legend=dict(orientation='h', y=-0.25))
                     progress_ui['chart_acc'].plotly_chart(fig_a2, use_container_width=True)
-                
-            time.sleep(0.1)  # Brief pause for UI update
+            # No sleep — Streamlit rerenders are synchronous; sleep only wastes time
         
         progress_bar.progress(1.0)
         status_text.text("✅ **TensorFlow training completed!**")
