@@ -9,6 +9,7 @@ Tables:
 
 import uuid
 from datetime import datetime
+from typing import Optional
 from sqlalchemy import (
     Column, String, Integer, Float, Boolean,
     DateTime, Text, ForeignKey, JSON, Enum as SAEnum,
@@ -101,7 +102,7 @@ class TrainingJob(Base):
     model      = relationship("ModelVersion", back_populates="job", uselist=False)
 
     @property
-    def duration_seconds(self) -> float | None:
+    def duration_seconds(self) -> Optional[float]:
         if self.started_at and self.completed_at:
             return (self.completed_at - self.started_at).total_seconds()
         return None
