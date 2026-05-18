@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { BarChart2, RefreshCw, ExternalLink } from 'lucide-react'
+import { BarChart2, RefreshCw, ExternalLink, Download, ChevronUp, ChevronDown } from 'lucide-react'
 import Card from '@/components/Card'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
@@ -16,6 +16,8 @@ export default function ResultsPage() {
   const [filter,  setFilter]  = useState<typeof FILTERS[number]>('all')
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState('')
+  const [sortKey, setSortKey] = useState('created_at')
+  const [sortDir, setSortDir] = useState<'asc'|'desc'>('desc')
 
   async function load(quiet = false) {
     if (!quiet) { setLoading(true); setError('') }
@@ -41,6 +43,56 @@ export default function ResultsPage() {
 
   const visible = filter === 'all' ? jobs : jobs.filter(j => j.status === filter)
 
+  function sortVal(job: TrainingJob): number | string {
+    if (sortKey === 'created_at') return job.created_at ?? ''
+    if (sortKey === 'architecture') return job.architecture ?? ''
+    if (sortKey === 'framework') return job.framework ?? ''
+    if (sortKey === 'status') return job.status ?? ''
+    if (sortKey === 'accuracy') {
+      return (job.results?.best_accuracy ?? job.results?.best_miou ?? job.results?.best_map ?? -1) as number
+    }
+    if (sortKey === 'duration') {
+      if (!job.started_at || !job.completed_at) return -1
+      return (new Date(job.completed_at).getTime() - new Date(job.started_at).getTime()) / 1000
+    }
+    return ''
+  }
+  const sorted = [...visible].sort((a, b) => {
+    const av = sortVal(a), bv = sortVal(b)
+    if (typeof av === 'number' && typeof bv === 'number') return sortDir === 'asc' ? av - bv : bv - av
+    return sortDir === 'asc' ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av))
+  })
+
+  function toggleSort(key: string) {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir('desc') }
+  }
+
+  function exportCSV() {
+    const headers = ['id','architecture','framework','dataset','task','status','accuracy_%','duration_s','started_at']
+    const rows = sorted.map(j => [
+      j.id.slice(0, 8), j.architecture, j.framework, j.dataset_name, j.task_type, j.status,
+      j.results?.best_accuracy != null  ? ((j.results.best_accuracy as number)*100).toFixed(2)
+      : j.results?.best_miou   != null  ? ((j.results.best_miou as number)*100).toFixed(2)
+      : j.results?.best_map    != null  ? ((j.results.best_map as number)*100).toFixed(2) : '',
+      (j.started_at && j.completed_at)
+        ? ((new Date(j.completed_at).getTime() - new Date(j.started_at).getTime()) / 1000).toFixed(1) : '',
+      j.started_at ?? '',
+    ])
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `results_${Date.now()}.csv`
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  function SortIcon({ col }: { col: string }) {
+    if (sortKey !== col) return <ChevronDown size={11} className="inline opacity-30" />
+    return sortDir === 'asc' ? <ChevronUp size={11} className="inline" /> : <ChevronDown size={11} className="inline" />
+  }
+
   return (
     <div className="p-8 space-y-6 max-w-5xl">
       {/* Header */}
@@ -59,6 +111,9 @@ export default function ResultsPage() {
               Auto-refreshing
             </span>
           )}
+          <Button variant="secondary" size="sm" icon={<Download size={14} />} onClick={exportCSV} disabled={sorted.length === 0}>
+            Export CSV
+          </Button>
           <Button variant="secondary" size="sm" icon={<RefreshCw size={14} />} onClick={() => load()} loading={loading}>
             Refresh
           </Button>
@@ -97,18 +152,18 @@ export default function ResultsPage() {
               <thead>
                 <tr className="border-b border-surface-700 text-slate-500 text-left">
                   <th className="pb-3 pr-4 font-medium">Job</th>
-                  <th className="pb-3 pr-4 font-medium">Dataset</th>
-                  <th className="pb-3 pr-4 font-medium">Architecture</th>
-                  <th className="pb-3 pr-4 font-medium">Framework</th>
-                  <th className="pb-3 pr-4 font-medium">Status</th>
-                  <th className="pb-3 pr-4 font-medium">Accuracy</th>
-                  <th className="pb-3 pr-4 font-medium">Duration</th>
-                  <th className="pb-3 pr-4 font-medium">Started</th>
+                  <th className="pb-3 pr-4 font-medium cursor-pointer hover:text-slate-300" onClick={() => toggleSort('dataset_name')}>Dataset <SortIcon col="dataset_name" /></th>
+                  <th className="pb-3 pr-4 font-medium cursor-pointer hover:text-slate-300" onClick={() => toggleSort('architecture')}>Architecture <SortIcon col="architecture" /></th>
+                  <th className="pb-3 pr-4 font-medium cursor-pointer hover:text-slate-300" onClick={() => toggleSort('framework')}>Framework <SortIcon col="framework" /></th>
+                  <th className="pb-3 pr-4 font-medium cursor-pointer hover:text-slate-300" onClick={() => toggleSort('status')}>Status <SortIcon col="status" /></th>
+                  <th className="pb-3 pr-4 font-medium cursor-pointer hover:text-slate-300" onClick={() => toggleSort('accuracy')}>Accuracy <SortIcon col="accuracy" /></th>
+                  <th className="pb-3 pr-4 font-medium cursor-pointer hover:text-slate-300" onClick={() => toggleSort('duration')}>Duration <SortIcon col="duration" /></th>
+                  <th className="pb-3 pr-4 font-medium cursor-pointer hover:text-slate-300" onClick={() => toggleSort('created_at')}>Started <SortIcon col="created_at" /></th>
                   <th className="pb-3 font-medium" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-surface-800">
-                {visible.map(job => (
+                {sorted.map(job => (
                   <tr key={job.id} className="hover:bg-surface-800/40 transition-colors">
                     <td className="py-3 pr-4 text-white font-mono text-xs">{job.id.slice(0, 8)}…</td>
                     <td className="py-3 pr-4 text-slate-300">{job.dataset_name}</td>

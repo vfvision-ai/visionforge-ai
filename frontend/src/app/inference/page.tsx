@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
-import { Upload, Zap, AlertCircle, BarChart2 } from 'lucide-react'
+import { Upload, Zap, AlertCircle, BarChart2, Download, Layers } from 'lucide-react'
 import Card from '@/components/Card'
 import Button from '@/components/Button'
 import { Select } from '@/components/FormControls'
@@ -15,6 +15,7 @@ interface InferenceResult {
   class_name?: string; confidence?: number
   [key: string]: unknown
 }
+interface BatchEntry { file: File; preview: string; result: InferenceResult | null; error?: string }
 
 export default function InferencePage() {
   const [models,   setModels]   = useState<ModelVersion[]>([])
@@ -27,7 +28,11 @@ export default function InferencePage() {
   const [loading,  setLoading]  = useState(false)
   const [error,    setError]    = useState('')
   const [dragging, setDragging] = useState(false)
+  const [batchMode, setBatchMode] = useState(false)
+  const [batchEntries, setBatchEntries] = useState<BatchEntry[]>([])
+  const [batchRunning, setBatchRunning] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const batchRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     getModels().then(data => {
@@ -43,6 +48,66 @@ export default function InferencePage() {
     setFile(f); setPreview(URL.createObjectURL(f)); setResult(null); setError('')
   }
 
+  async function runInference(f: File): Promise<InferenceResult> {
+    const form = new FormData()
+    form.append('file', f)
+    form.append('model_id', modelId)
+    form.append('top_k', String(topK))
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY ?? ''
+    const headers: Record<string, string> = {}
+    if (apiKey) headers['X-API-Key'] = apiKey
+    const res = await fetch('/api/v1/inference/', { method: 'POST', body: form, headers })
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}))
+      throw new Error((j as { detail?: string }).detail || `HTTP ${res.status}`)
+    }
+    return res.json()
+  }
+
+  function topPred(r: InferenceResult): Prediction | null {
+    if (Array.isArray(r.predictions) && r.predictions.length) return r.predictions[0] as Prediction
+    if (r.top_class != null) return { class_name: String(r.top_class), confidence: Number(r.top_confidence ?? 0) }
+    if (r.class_name != null) return { class_name: String(r.class_name), confidence: Number(r.confidence ?? 0) }
+    return null
+  }
+
+  function addBatchFiles(files: FileList | File[]) {
+    const newEntries: BatchEntry[] = Array.from(files)
+      .filter(f => f.type.startsWith('image/'))
+      .map(f => ({ file: f, preview: URL.createObjectURL(f), result: null }))
+    setBatchEntries(prev => [...prev, ...newEntries])
+  }
+
+  async function runBatch() {
+    if (!modelId || !batchEntries.length) return
+    setBatchRunning(true)
+    const updated = [...batchEntries]
+    await Promise.all(updated.map(async (entry, i) => {
+      try {
+        updated[i] = { ...entry, result: await runInference(entry.file), error: undefined }
+      } catch (e: unknown) {
+        updated[i] = { ...entry, error: e instanceof Error ? e.message : 'Failed' }
+      }
+    }))
+    setBatchEntries(updated)
+    setBatchRunning(false)
+  }
+
+  function exportBatchCSV() {
+    const headers = ['filename', 'top_class', 'confidence_%']
+    const rows = batchEntries.map(e => {
+      const p = e.result ? topPred(e.result) : null
+      return [e.file.name, p?.class_name ?? (e.error ?? ''), p != null ? (p.confidence * 100).toFixed(1) : '']
+    })
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `inference_batch_${Date.now()}.csv`
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   function onDrop(e: React.DragEvent) {
     e.preventDefault(); setDragging(false)
     const f = e.dataTransfer.files[0]; if (f) handleFile(f)
@@ -51,23 +116,9 @@ export default function InferencePage() {
   async function handleRun() {
     if (!file || !modelId) return
     setLoading(true); setError(''); setResult(null)
-    try {
-      const form = new FormData()
-      form.append('file', file)
-      form.append('model_id', modelId)
-      form.append('top_k', String(topK))
-      const apiKey = process.env.NEXT_PUBLIC_API_KEY ?? ''
-      const headers: Record<string, string> = {}
-      if (apiKey) headers['X-API-Key'] = apiKey
-      const res = await fetch('/api/v1/inference/', { method: 'POST', body: form, headers })
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}))
-        throw new Error((j as { detail?: string }).detail || `HTTP ${res.status}`)
-      }
-      setResult(await res.json())
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Inference failed')
-    } finally { setLoading(false) }
+    try { setResult(await runInference(file)) }
+    catch (e: unknown) { setError(e instanceof Error ? e.message : 'Inference failed') }
+    finally { setLoading(false) }
   }
 
   // Normalise to predictions array
@@ -91,6 +142,18 @@ export default function InferencePage() {
         <p className="text-sm text-slate-500 mt-1">Run prediction on an image using a trained model</p>
       </div>
 
+      {/* Mode toggle */}
+      <div className="flex gap-1 p-1 bg-surface-900 rounded-lg w-fit">
+        {([['single', 'Single Image', Zap], ['batch', 'Batch Mode', Layers]] as const).map(([mode, label, Icon]) => (
+          <button key={mode} onClick={() => { setBatchMode(mode === 'batch'); setResult(null); setError('') }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+              (mode === 'batch') === batchMode ? 'bg-brand-600 text-white' : 'text-slate-400 hover:text-white'
+            }`}>
+            <Icon size={12} /> {label}
+          </button>
+        ))}
+      </div>
+
       {models.length === 0 && (
         <div className="p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-sm text-yellow-400 flex items-start gap-2">
           <AlertCircle size={16} className="mt-0.5 shrink-0" />
@@ -110,21 +173,22 @@ export default function InferencePage() {
               <label className="block text-xs text-slate-400 mb-1.5">
                 Top-K Predictions: <span className="text-brand-400 font-mono">{topK}</span>
               </label>
-              <input type="range" min={1} max={10} step={1} value={topK}
+              <input type="range" title="Top-K predictions" min={1} max={10} step={1} value={topK}
                 onChange={e => setTopK(Number(e.target.value))} className="w-full accent-brand-500" />
             </div>
             <div>
               <label className="block text-xs text-slate-400 mb-1.5">
                 Min Confidence: <span className="text-brand-400 font-mono">{(threshold*100).toFixed(0)}%</span>
               </label>
-              <input type="range" min={0} max={0.95} step={0.05} value={threshold}
+              <input type="range" title="Minimum confidence threshold" min={0} max={0.95} step={0.05} value={threshold}
                 onChange={e => setThreshold(Number(e.target.value))} className="w-full accent-brand-500" />
             </div>
           </div>
         </div>
       </Card>
 
-      {/* Upload */}
+      {/* Upload — single mode only */}
+      {!batchMode && (
       <Card>
         <h2 className="text-sm font-semibold text-slate-300 mb-4">Upload Image</h2>
         <div
@@ -152,7 +216,7 @@ export default function InferencePage() {
             </>
           )}
         </div>
-        <input ref={inputRef} type="file" accept="image/*" className="hidden"
+        <input ref={inputRef} type="file" title="Select an image" accept="image/*" className="hidden"
           onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
         {error && <div className="mt-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400">{error}</div>}
         <Button className="mt-4 w-full justify-center" size="lg" loading={loading}
@@ -160,9 +224,81 @@ export default function InferencePage() {
           Run Inference
         </Button>
       </Card>
+      )}
 
-      {/* Results */}
-      {result && (
+      {/* Batch Mode */}
+      {batchMode && (
+        <>
+          <Card>
+            <h2 className="text-sm font-semibold text-slate-300 mb-4">Batch Upload</h2>
+            <div
+              className="border-2 border-dashed border-surface-600 hover:border-surface-500 rounded-xl p-6 text-center cursor-pointer transition-colors"
+              onClick={() => batchRef.current?.click()}
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => { e.preventDefault(); if (e.dataTransfer.files.length) addBatchFiles(e.dataTransfer.files) }}
+            >
+              <Layers size={28} className="mx-auto text-slate-600 mb-2" />
+              <p className="text-sm text-slate-400">Click or drag multiple images here</p>
+              <p className="text-xs text-slate-600 mt-1">{batchEntries.length} image{batchEntries.length !== 1 ? 's' : ''} loaded</p>
+            </div>
+            <input ref={batchRef} type="file" title="Select images for batch inference" accept="image/*" multiple className="hidden"
+              onChange={e => { if (e.target.files) addBatchFiles(e.target.files) }} />
+            <div className="mt-4 flex gap-2">
+              <Button size="lg" icon={<Zap size={15} />} loading={batchRunning}
+                disabled={!batchEntries.length || !modelId} onClick={runBatch}>
+                {batchRunning ? 'Running…' : `Run All (${batchEntries.length})`}
+              </Button>
+              {batchEntries.some(e => e.result) && (
+                <Button variant="secondary" icon={<Download size={14} />} onClick={exportBatchCSV}>
+                  Export CSV
+                </Button>
+              )}
+              {batchEntries.length > 0 && (
+                <Button variant="ghost" onClick={() => setBatchEntries([])}>Clear</Button>
+              )}
+            </div>
+          </Card>
+
+          {batchEntries.length > 0 && (
+            <Card>
+              <h2 className="text-sm font-semibold text-slate-300 mb-4">Results</h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                {batchEntries.map((entry, i) => {
+                  const p = entry.result ? topPred(entry.result) : null
+                  return (
+                    <div key={i} className="bg-surface-800 rounded-lg overflow-hidden border border-surface-700">
+                      <div className="relative h-28 bg-surface-900">
+                        <Image src={entry.preview} alt={entry.file.name} fill className="object-contain" unoptimized />
+                      </div>
+                      <div className="p-2">
+                        <p className="text-xs text-slate-400 truncate" title={entry.file.name}>{entry.file.name}</p>
+                        {entry.error ? (
+                          <p className="text-xs text-red-400 mt-1">{entry.error}</p>
+                        ) : p ? (
+                          <>
+                            <p className="text-xs font-medium text-white mt-1 truncate">{p.class_name}</p>
+                            <div className="mt-1 h-1.5 bg-surface-700 rounded-full">
+                              <div className="h-full bg-brand-500 rounded-full" style={{ width: `${(p.confidence * 100).toFixed(0)}%` }} />
+                            </div>
+                            <p className="text-xs text-brand-400 mt-0.5">{(p.confidence * 100).toFixed(1)}%</p>
+                          </>
+                        ) : batchRunning ? (
+                          <p className="text-xs text-slate-500 mt-1">Running…</p>
+                        ) : (
+                          <p className="text-xs text-slate-600 mt-1">Pending</p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </Card>
+          )}
+        </>
+      )}
+
+      {/* Single-mode Results */}
+      {!batchMode && result && (
         <Card>
           <h2 className="text-sm font-semibold text-slate-300 mb-4 flex items-center gap-2">
             <BarChart2 size={16} className="text-brand-400" /> Predictions

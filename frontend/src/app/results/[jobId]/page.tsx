@@ -222,6 +222,29 @@ export default function JobDetailPage() {
           <MetaItem label={metricLabel} value={bestMetric != null ? pct(bestMetric) : (latestMetric != null ? pct(latestMetric) : undefined)} />
           <MetaItem label="Best Loss"  value={job.results?.best_loss != null ? (job.results.best_loss as number).toFixed(4) : (lastMetrics?.val_loss != null ? (lastMetrics.val_loss as number).toFixed(4) : undefined)} />
         </div>
+
+        {/* Extended metrics — show any extra numeric keys from results */}
+        {(() => {
+          const SHOWN = new Set(['best_accuracy','best_miou','best_map','best_loss','num_params','total_params'])
+          const extras = Object.entries(job.results ?? {}).filter(
+            ([k, v]) => !SHOWN.has(k) && typeof v === 'number' && !k.startsWith('_')
+          ) as [string, number][]
+          if (!extras.length) return null
+          return (
+            <div className="mt-4 pt-4 border-t border-surface-700">
+              <p className="text-xs text-slate-500 uppercase tracking-wide mb-3">Additional Metrics</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {extras.map(([k, v]) => (
+                  <MetaItem key={k}
+                    label={k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                    value={typeof v === 'number' && v > 0 && v <= 1 ? pct(v) : typeof v === 'number' ? v.toFixed(4) : String(v)}
+                  />
+                ))}
+              </div>
+            </div>
+          )
+        })()}
+      </Card>
       </Card>
 
       {/* Charts — shown as soon as any history is available */}
