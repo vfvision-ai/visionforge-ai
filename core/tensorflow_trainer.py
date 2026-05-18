@@ -254,9 +254,19 @@ class TensorFlowTrainer:
                 model = self._build_sequential_cnn(input_shape, num_classes, model_config)
             
             self.model = model
-            self.logger.info(f"✅ Model built successfully with {model.count_params():,} parameters")
+
+            # Compile immediately so model.fit() can be called without extra steps
+            lr = getattr(self.config, 'learning_rate', 0.001)
+            num_classes = data_info['num_classes']
+            loss = 'categorical_crossentropy' if num_classes > 2 else 'binary_crossentropy'
+            model.compile(
+                optimizer=tf.keras.optimizers.Adam(learning_rate=lr),
+                loss=loss,
+                metrics=['accuracy'],
+            )
+            self.logger.info(f"✅ Model built & compiled — params={model.count_params():,}, loss={loss}, lr={lr}")
             return model
-            
+
         except Exception as e:
             self.logger.error(f"❌ Model building failed: {e}")
             raise
