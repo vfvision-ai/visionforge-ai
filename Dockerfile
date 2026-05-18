@@ -59,8 +59,8 @@ COPY . .
 # Create non-root user for security
 RUN useradd -m -u 1000 mluser && \
     chown -R mluser:mluser /app && \
-    mkdir -p experiments uploads/extracted data logs && \
-    chown -R mluser:mluser experiments uploads data logs
+    mkdir -p /app/experiments /app/uploads/extracted /app/data /app/logs /app/models && \
+    chmod -R 777 /app/experiments /app/uploads /app/data /app/logs /app/models
 
 # Switch to non-root user
 USER mluser

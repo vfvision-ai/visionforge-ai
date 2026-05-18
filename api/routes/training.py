@@ -38,7 +38,7 @@ def submit_training_job(
     The job is persisted immediately with status=PENDING, then handed off to a
     Celery worker. Poll `/api/v1/training/{job_id}` for status updates.
     """
-    output_dir = os.path.join("experiments", f"job_{payload.dataset_name}_{payload.architecture}")
+    output_dir = os.path.join("/app/experiments", f"job_{payload.dataset_name}_{payload.architecture}")
 
     job = crud.create_job(
         db=db,

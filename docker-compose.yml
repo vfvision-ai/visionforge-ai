@@ -23,9 +23,10 @@ x-common: &common
   env_file: .env
   volumes:
     - ./data:/app/data
-    - ./experiments:/app/experiments
-    - ./uploads:/app/uploads
-    - ./logs:/app/logs
+    - experiments_data:/app/experiments
+    - uploads_data:/app/uploads
+    - logs_data:/app/logs
+    - models_data:/app/models
   restart: unless-stopped
   depends_on:
     redis:
@@ -227,3 +228,7 @@ volumes:
   redis_data:
   postgres_data:
   nginx_logs:
+  experiments_data:
+  uploads_data:
+  logs_data:
+  models_data:
