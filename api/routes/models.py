@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
@@ -19,8 +20,8 @@ router = APIRouter()
 def list_models(
     skip: int = 0,
     limit: int = 50,
-    framework: str | None = None,
-    task_type: str | None = None,
+    framework: Optional[str] = None,
+    task_type: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     models = crud.list_models(db, skip=skip, limit=limit)
