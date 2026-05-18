@@ -189,7 +189,6 @@ def train_tensorflow(
 
     try:
         from core.tensorflow_trainer import TensorFlowTrainer
-        from utils.callbacks import DBProgressCallback
 
         os.makedirs(output_dir, exist_ok=True)
 
@@ -199,14 +198,41 @@ def train_tensorflow(
         config  = _build_config(ds_info, model_config, hyperparams, output_dir)
 
         trainer = TensorFlowTrainer(config=config)
-        if hasattr(trainer, 'callback_manager'):
-            trainer.callback_manager.add_callback(DBProgressCallback(job_id))
+
+        # Build a Keras-compatible callback for per-epoch DB progress updates
+        _job_id = job_id
+        try:
+            import tensorflow.keras.callbacks as _keras_cb
+
+            class _KerasDBProgress(_keras_cb.Callback):
+                def on_epoch_end(self, epoch, logs=None):
+                    logs = logs or {}
+                    metrics = {
+                        "train_loss":     float(logs.get("loss", 0.0)),
+                        "train_accuracy": float(logs.get("accuracy", logs.get("acc", 0.0))),
+                        "train_acc":      float(logs.get("accuracy", logs.get("acc", 0.0))),
+                        "val_loss":       float(logs.get("val_loss", 0.0)),
+                        "val_accuracy":   float(logs.get("val_accuracy", logs.get("val_acc", 0.0))),
+                        "val_acc":        float(logs.get("val_accuracy", logs.get("val_acc", 0.0))),
+                    }
+                    try:
+                        from db.database import db_session as _dbs
+                        from db.crud import update_job_history as _ujh
+                        with _dbs() as _db:
+                            _ujh(_db, _job_id, epoch + 1, metrics)
+                    except Exception:
+                        pass
+
+            keras_db_cb = _KerasDBProgress()
+        except Exception:
+            keras_db_cb = None
 
         data_info = trainer.prepare_data(ds_info, batch_size=hyperparams.get("batch_size", 32))
         trainer.build_model(model_config, data_info)
         results = trainer.train(
             epochs=hyperparams.get("epochs", 50),
             model_save_dir=output_dir,
+            extra_callbacks=[keras_db_cb] if keras_db_cb else None,
         )
 
         model_path = results.get("model_path", "")
@@ -268,7 +294,8 @@ def _mark_running(job_id: str, celery_task_id: str):
 def _mark_complete(job_id: str, results: Dict, model_path: str):
     """Persist completed job, normalising training_history to a list of per-epoch dicts,
     and create a ModelVersion record so the Models page is populated."""
-    raw_history = results.get("training_history", [])
+    # PyTorch TrainingResults dataclass uses 'metrics_history'; TF/sklearn use 'training_history'
+    raw_history = results.get("training_history") or results.get("metrics_history") or []
 
     # TF/sklearn trainers return  {'train_accuracy': [...], 'val_loss': [...], ...}
     # Convert to  [{'epoch': 1, 'train_accuracy': 0.9, ...}, ...] for consistent storage

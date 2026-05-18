@@ -111,7 +111,10 @@ def complete_job(
         job.completed_at = datetime.utcnow()
         job.results = results
         job.model_path = model_path
-        job.training_history = training_history or []
+        # Only overwrite training_history when we have real data; otherwise keep the
+        # per-epoch records already written live by DBProgressCallback.
+        if training_history:
+            job.training_history = training_history
     return job
 
 

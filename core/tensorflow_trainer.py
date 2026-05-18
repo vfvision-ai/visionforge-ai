@@ -531,8 +531,9 @@ class TensorFlowTrainer:
             self.logger.error(f"❌ Model compilation failed: {e}")
             raise
     
-    def train(self, epochs: int = 10, save_model: bool = True, 
-              model_save_dir: str = "./experiments") -> Dict[str, Any]:
+    def train(self, epochs: int = 10, save_model: bool = True,
+              model_save_dir: str = "./experiments",
+              extra_callbacks: Optional[List] = None) -> Dict[str, Any]:
         """Train the TensorFlow model with enhanced metrics tracking."""
         try:
             self.logger.info(f"🚀 Starting TensorFlow training for {epochs} epochs...")
@@ -543,6 +544,8 @@ class TensorFlowTrainer:
             
             # Setup callbacks
             callback_list = self._setup_callbacks(save_dir, save_model)
+            if extra_callbacks:
+                callback_list.extend(extra_callbacks)
             
             # Start training timer
             training_start_time = time.time()
