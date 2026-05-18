@@ -350,6 +350,11 @@ def _mark_complete(job_id: str, results: Dict, model_path: str):
                     }
                     extra_metrics = {k: results[k] for k in extra_keys if results.get(k) is not None}
 
+                    # Store input_size so the inference page can display it
+                    ds_img_size = (job.dataset_config or {}).get("image_size")
+                    if ds_img_size and len(ds_img_size) == 2:
+                        extra_metrics["input_size"] = f"{int(ds_img_size[0])}\u00d7{int(ds_img_size[1])}"
+
                     # num_classes: try results first, fall back to dataset_config via job
                     num_classes = results.get("num_classes")
                     if num_classes is None and job.dataset_config:

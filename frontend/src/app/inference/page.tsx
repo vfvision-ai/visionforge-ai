@@ -4,7 +4,7 @@ import Image from 'next/image'
 import {
   Upload, Zap, AlertCircle, BarChart2, Download, Layers,
   FileArchive, CheckCircle2, XCircle, Clock, Cpu, Target,
-  ChevronRight, RefreshCw,
+  ChevronRight, RefreshCw, Maximize2,
 } from 'lucide-react'
 import Card from '@/components/Card'
 import Button from '@/components/Button'
@@ -279,6 +279,11 @@ export default function InferencePage() {
                 {selectedModel.num_classes != null && (
                   <span className="text-xs text-slate-400 bg-surface-700 px-2 py-0.5 rounded-full flex items-center gap-1">
                     <Target size={10} /> {selectedModel.num_classes} classes
+                  </span>
+                )}
+                {selectedModel.extra_metrics?.input_size != null && (
+                  <span className="text-xs text-slate-400 bg-surface-700 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Maximize2 size={10} /> {String(selectedModel.extra_metrics.input_size)}
                   </span>
                 )}
                 {selectedModel.val_accuracy != null && (
