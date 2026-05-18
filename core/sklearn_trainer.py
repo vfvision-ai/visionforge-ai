@@ -437,7 +437,7 @@ class SklearnTrainer:
             }
             
             # Enhanced metrics tracking
-            accuracy_improvement = self.metrics_tracker.track_accuracy(1, epoch_metrics)
+            self.metrics_tracker.update(epoch_metrics)
             
             # Callback: Epoch ends
             self.callback_manager.on_epoch_end(0, epoch_metrics)

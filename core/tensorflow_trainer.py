@@ -588,17 +588,14 @@ class TensorFlowTrainer:
                     'val_acc': float(val_acc[epoch]),
                     'val_accuracy': float(val_acc[epoch])
                 }
-                
-                # Track with enhanced metrics
-                accuracy_improvement = self.metrics_tracker.track_accuracy(
-                    epoch + 1, epoch_metrics
-                )
-                
+
+                self.metrics_tracker.update(epoch_metrics)
+
                 # Log detailed metrics
                 overfitting_gap = abs(epoch_metrics['train_accuracy'] - epoch_metrics['val_accuracy']) * 100
                 if overfitting_gap > 5.0:
                     self.logger.warning(f"   ⚠️ Overfitting Gap: {overfitting_gap:.4f}% (Train-Val)")
-                
+
                 self.logger.info(f"Epoch {epoch + 1} - {epoch_metrics}")
             
             # Prepare comprehensive results
