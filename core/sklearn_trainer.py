@@ -122,6 +122,13 @@ class SklearnTrainer:
     
     def _extract_features_and_labels(self, dataset_info: DatasetInfo) -> Tuple[np.ndarray, List[str]]:
         """Extract features from images for traditional ML."""
+        # ── Builtin datasets: load via Keras datasets API ─────────────────────
+        is_builtin = getattr(dataset_info, 'is_builtin', False)
+        dataset_path = str(getattr(dataset_info, 'dataset_path', '') or '')
+        if is_builtin or not Path(dataset_path).is_dir():
+            return self._extract_builtin_features(dataset_info)
+        # ──────────────────────────────────────────────────────────────────────
+
         try:
             features = []
             labels = []
@@ -154,13 +161,51 @@ class SklearnTrainer:
             
             features_array = np.array(features)
             self.logger.info(f"✅ Extracted {len(features_array)} feature vectors of dimension {features_array.shape[1]}")
-            
+
             return features_array, labels
-            
+
         except Exception as e:
             self.logger.error(f"❌ Feature extraction failed: {e}")
             raise
-    
+
+    _SKLEARN_BUILTIN_MAP = {
+        "mnist":         "mnist",
+        "MNIST":         "mnist",
+        "fashion_mnist": "fashion_mnist",
+        "fashion-mnist": "fashion_mnist",
+        "Fashion MNIST": "fashion_mnist",
+        "cifar10":       "cifar10",
+        "cifar-10":      "cifar10",
+        "CIFAR-10":      "cifar10",
+        "cifar100":      "cifar100",
+        "cifar-100":     "cifar100",
+        "CIFAR-100":     "cifar100",
+    }
+
+    def _extract_builtin_features(self, dataset_info: DatasetInfo) -> Tuple[np.ndarray, List[str]]:
+        """Load a canonical built-in dataset and return flattened feature arrays."""
+        try:
+            import tensorflow as tf  # already installed alongside sklearn
+            name = (getattr(dataset_info, 'builtin_dataset_name', None)
+                    or getattr(dataset_info, 'dataset_path', None) or 'mnist')
+            keras_name = self._SKLEARN_BUILTIN_MAP.get(str(name), 'mnist')
+            self.logger.info(f"🔄 Loading builtin dataset for sklearn: {keras_name}")
+            loader = getattr(tf.keras.datasets, keras_name)
+            (x_train, y_train), (x_test, y_test) = loader.load_data()
+
+            x = np.concatenate([x_train, x_test]).astype(np.float32) / 255.0
+            y = np.concatenate([y_train, y_test])
+
+            # Flatten images to 1-D feature vectors
+            x = x.reshape(len(x), -1)
+            labels = [str(int(label)) for label in y]
+
+            self.logger.info(f"✅ Loaded {len(x)} samples, feature_dim={x.shape[1]}, classes={len(set(labels))}")
+            return x, labels
+        except Exception as e:
+            self.logger.error(f"❌ Builtin feature extraction failed: {e}")
+            raise
+
     def _extract_image_features(self, image_path: str, target_size: Tuple[int, int]) -> Optional[np.ndarray]:
         """Extract traditional ML features from an image."""
         try:

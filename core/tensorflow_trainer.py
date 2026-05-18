@@ -81,11 +81,36 @@ class TensorFlowTrainer:
         except Exception as e:
             self.logger.warning(f"⚠️ TensorFlow configuration warning: {e}")
     
-    def prepare_data(self, dataset_info: DatasetInfo, batch_size: int = 32, 
+    # Canonical map: various user-facing names -> tf.keras.datasets module name
+    _KERAS_DATASET_MAP = {
+        "mnist":         "mnist",
+        "MNIST":         "mnist",
+        "fashion_mnist": "fashion_mnist",
+        "fashion-mnist": "fashion_mnist",
+        "Fashion MNIST": "fashion_mnist",
+        "cifar10":       "cifar10",
+        "cifar-10":      "cifar10",
+        "CIFAR-10":      "cifar10",
+        "cifar100":      "cifar100",
+        "cifar-100":     "cifar100",
+        "CIFAR-100":     "cifar100",
+    }
+
+    def prepare_data(self, dataset_info: DatasetInfo, batch_size: int = 32,
                     validation_split: float = 0.2) -> Dict[str, Any]:
         """Prepare TensorFlow data generators for training."""
         try:
             self.logger.info("🔄 Preparing TensorFlow data generators...")
+
+            # ── Builtin dataset (MNIST, CIFAR-10, …) ──────────────────────────
+            dataset_path = str(getattr(dataset_info, 'dataset_path', '') or '')
+            is_builtin = getattr(dataset_info, 'is_builtin', False)
+            keras_name = self._KERAS_DATASET_MAP.get(dataset_path) or \
+                         self._KERAS_DATASET_MAP.get(
+                             getattr(dataset_info, 'builtin_dataset_name', '') or '')
+            if is_builtin or keras_name or not Path(dataset_path).is_dir():
+                return self._prepare_builtin_data(dataset_info, batch_size, keras_name)
+            # ──────────────────────────────────────────────────────────────────
             
             # Determine input shape
             if len(dataset_info.image_size) == 2:
@@ -141,11 +166,64 @@ class TensorFlowTrainer:
             
             self.logger.info(f"✅ Data prepared - Train: {data_info['train_samples']}, Val: {data_info['val_samples']}")
             return data_info
-            
+
         except Exception as e:
             self.logger.error(f"❌ Data preparation failed: {e}")
             raise
-    
+
+    def _prepare_builtin_data(self, dataset_info: DatasetInfo,
+                              batch_size: int, keras_name: str) -> Dict[str, Any]:
+        """Load a built-in Keras dataset (MNIST, CIFAR-10, …) instead of a directory."""
+        if not keras_name:
+            keras_name = self._KERAS_DATASET_MAP.get(
+                str(getattr(dataset_info, 'dataset_path', '') or '').lower(), 'mnist')
+
+        self.logger.info(f"🔄 Loading builtin Keras dataset: {keras_name}")
+        loader = getattr(tf.keras.datasets, keras_name)
+        (x_train, y_train), (x_test, y_test) = loader.load_data()
+
+        # Normalize to [0, 1]
+        x_train = x_train.astype('float32') / 255.0
+        x_test  = x_test.astype('float32')  / 255.0
+
+        # Add channel dim for grayscale: (N, H, W) -> (N, H, W, 1)
+        if x_train.ndim == 3:
+            x_train = x_train[..., np.newaxis]
+            x_test  = x_test[..., np.newaxis]
+
+        num_classes = int(y_train.max()) + 1
+        y_train_cat = tf.keras.utils.to_categorical(y_train, num_classes)
+        y_test_cat  = tf.keras.utils.to_categorical(y_test,  num_classes)
+
+        # Store as tf.data.Dataset so model.fit() receives batches correctly
+        self.train_generator = (
+            tf.data.Dataset
+            .from_tensor_slices((x_train, y_train_cat))
+            .shuffle(10000)
+            .batch(batch_size)
+            .prefetch(tf.data.AUTOTUNE)
+        )
+        self.val_generator = (
+            tf.data.Dataset
+            .from_tensor_slices((x_test, y_test_cat))
+            .batch(batch_size)
+            .prefetch(tf.data.AUTOTUNE)
+        )
+
+        input_shape = x_train.shape[1:]  # e.g. (28, 28, 1)
+        data_info = {
+            'input_shape':   input_shape,
+            'num_classes':   num_classes,
+            'train_samples': len(x_train),
+            'val_samples':   len(x_test),
+            'class_indices': {str(i): i for i in range(num_classes)},
+        }
+        self.logger.info(
+            f"✅ Builtin {keras_name}: train={len(x_train)}, val={len(x_test)}, "
+            f"classes={num_classes}, shape={input_shape}"
+        )
+        return data_info
+
     def build_model(self, model_config: Dict[str, Any], data_info: Dict[str, Any]) -> keras.Model:
         """Build TensorFlow/Keras model architecture."""
         try:

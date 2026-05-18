@@ -25,7 +25,16 @@ from db.database import db_session
 from db import crud
 
 logger = get_task_logger(__name__)
-
+# Known built-in dataset metadata so DatasetInfo has correct num_classes/image_size
+_BUILTIN_META: Dict[str, Dict] = {
+    "mnist":         {"num_classes": 10,  "image_size": (28, 28),  "channels": 1, "num_samples": 70000},
+    "fashion_mnist": {"num_classes": 10,  "image_size": (28, 28),  "channels": 1, "num_samples": 70000},
+    "fashion-mnist": {"num_classes": 10,  "image_size": (28, 28),  "channels": 1, "num_samples": 70000},
+    "cifar10":       {"num_classes": 10,  "image_size": (32, 32),  "channels": 3, "num_samples": 60000},
+    "cifar-10":      {"num_classes": 10,  "image_size": (32, 32),  "channels": 3, "num_samples": 60000},
+    "cifar100":      {"num_classes": 100, "image_size": (32, 32),  "channels": 3, "num_samples": 60000},
+    "cifar-100":     {"num_classes": 100, "image_size": (32, 32),  "channels": 3, "num_samples": 60000},
+}
 # Fields that belong to DatasetInfo dataclass â€” anything else is stripped
 _DATASET_INFO_FIELDS = {  # noqa: E501
     "task_type", "num_classes", "num_samples", "class_names", "class_distribution",
@@ -81,24 +90,24 @@ def _safe_dataset_info(dataset_name: str, task_type: str, dataset_config: Dict[s
     # Only pass keys that DatasetInfo actually accepts
     safe = {k: v for k, v in dataset_config.items() if k in _DATASET_INFO_FIELDS}
 
-    # If dataset_config has no real DatasetInfo fields (frontend sent training-control
-    # fields only), build a minimal builtin DatasetInfo instead
+    # If dataset_config has no real DatasetInfo fields, build from known builtin metadata
     if not safe or "task_type" not in safe:
+        meta = _BUILTIN_META.get(dataset_name.lower(), {})
         safe = {
-            "task_type":                task_type,
-            "num_classes":              0,          # trainer will auto-detect from data
-            "num_samples":              0,
-            "class_names":              [],
-            "class_distribution":       {},
-            "image_size":               (224, 224),
-            "image_stats":              {},
-            "has_annotations":          False,
-            "annotation_format":        None,
-            "recommended_batch_size":   32,
-            "estimated_training_time":  0.0,
-            "dataset_path":             dataset_name,
-            "is_builtin":               True,
-            "builtin_dataset_name":     dataset_name,
+            "task_type":              task_type,
+            "num_classes":            meta.get("num_classes", 10),
+            "num_samples":            meta.get("num_samples", 0),
+            "class_names":            [],
+            "class_distribution":     {},
+            "image_size":             meta.get("image_size", (224, 224)),
+            "image_stats":            {},
+            "has_annotations":        False,
+            "annotation_format":      None,
+            "recommended_batch_size": 32,
+            "estimated_training_time":0.0,
+            "dataset_path":           dataset_name,
+            "is_builtin":             True,
+            "builtin_dataset_name":   dataset_name,
         }
 
     return DatasetInfo(**safe)
