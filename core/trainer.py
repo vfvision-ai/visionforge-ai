@@ -667,12 +667,46 @@ class AutoTrainer:
         try:
             import torch as _torch
             model_save_path.parent.mkdir(parents=True, exist_ok=True)
+
+            di = self.config.dataset_info
+            mc = self.config.model_config
+
+            # ── Preprocessing metadata ──────────────────────────────────────
+            # image_size comes from the DatasetInfo (set during analyse/builtin lookup)
+            _img_size = getattr(di, 'image_size', None)  # (H, W) or None
+            _channels = getattr(di, 'channels', None)
+
+            # Normalization: read from model_config.config_params if present.
+            # Celery API dispatches without config_params, so the default is
+            # 'Standard (0-1)' == just ToTensor (no Normalize).
+            _cp = getattr(mc, 'config_params', {}) or {}
+            _norm_type = _cp.get('normalization_type', 'Standard (0-1)')
+            _ch = int(_channels) if _channels else 3
+            if _norm_type in ('Z-Score (-1 to 1)', 'z-score', 'zscore'):
+                _norm_mean = [0.5] * _ch
+                _norm_std  = [0.5] * _ch
+            elif _norm_type in ('ResNet Preprocessing (PyTorch)', 'MobileNet Preprocessing (PyTorch)'):
+                _norm_mean = [0.485, 0.456, 0.406]
+                _norm_std  = [0.229, 0.224, 0.225]
+            else:
+                # Standard (0-1) or unknown — ToTensor already scales to [0,1]
+                _norm_mean = None
+                _norm_std  = None
+
             _torch.save({
-                "model_state_dict": self.model.state_dict(),
-                "architecture":     getattr(self.config.model_config, 'architecture', 'unknown'),
-                "num_classes":       getattr(self.config.dataset_info, 'num_classes', 0),
-                "task_type":         getattr(self.config.dataset_info, 'task_type', 'classification'),
-                "best_accuracy":     self.best_metric,
+                "model_state_dict":   self.model.state_dict(),
+                "architecture":       getattr(mc, 'architecture', 'unknown'),
+                "num_classes":        getattr(di, 'num_classes', 0),
+                "task_type":          getattr(di, 'task_type', 'classification'),
+                "best_accuracy":      self.best_metric,
+                # ── Preprocessing metadata (used by the inference endpoint) ──────
+                "image_size":         list(_img_size) if _img_size else None,
+                "channels":           _ch,
+                "normalization_mean": _norm_mean,
+                "normalization_std":  _norm_std,
+                "dataset_name":       (getattr(di, 'builtin_dataset_name', None)
+                                       or getattr(di, 'dataset_path', None)),
+                "class_names":        list(getattr(di, 'class_names', []) or []),
             }, str(model_save_path))
             self.logger.info(f"💾 Model saved to: {model_save_path}")
         except Exception as _save_exc:
