@@ -12,6 +12,22 @@ const nextConfig = {
         source: '/health',
         destination: `${apiUrl}/health`,
       },
+      {
+        source: '/ready',
+        destination: `${apiUrl}/ready`,
+      },
+      {
+        source: '/system-info',
+        destination: `${apiUrl}/system-info`,
+      },
+      {
+        source: '/docs',
+        destination: `${apiUrl}/docs`,
+      },
+      {
+        source: '/openapi.json',
+        destination: `${apiUrl}/openapi.json`,
+      },
     ]
   },
 }
