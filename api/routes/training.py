@@ -17,6 +17,32 @@ from api.dependencies import get_db, require_api_key
 from db import crud
 from db.models import JobStatus
 
+# Map framework name → importable module to check availability at request time
+_FRAMEWORK_MODULE = {
+    "pytorch":     "torch",
+    "tensorflow":  "tensorflow",
+    "sklearn":     "sklearn",
+}
+
+
+def _check_framework_available(framework: str):
+    """Raise HTTPException 400 if the requested framework is not installed."""
+    module = _FRAMEWORK_MODULE.get(framework)
+    if module is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown framework {framework!r}. Choose pytorch, tensorflow, or sklearn.",
+        )
+    import importlib
+    if importlib.util.find_spec(module) is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Framework {framework!r} is not installed in this environment. "
+                f"Install it (e.g. pip install {module}) or choose a different framework."
+            ),
+        )
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -38,6 +64,8 @@ def submit_training_job(
     The job is persisted immediately with status=PENDING, then handed off to a
     Celery worker. Poll `/api/v1/training/{job_id}` for status updates.
     """
+    _check_framework_available(payload.framework)
+
     output_dir = os.path.join("/app/experiments", f"job_{payload.dataset_name}_{payload.architecture}")
 
     job = crud.create_job(
