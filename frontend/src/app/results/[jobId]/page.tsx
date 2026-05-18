@@ -245,7 +245,7 @@ export default function JobDetailPage() {
           )
         })()}
       </Card>
-      </Card>
+
 
       {/* Charts — shown as soon as any history is available */}
       {lossData.length > 0 && (
