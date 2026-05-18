@@ -46,4 +46,7 @@ celery_app.conf.update(
 
     # Retry policy for failed tasks (don't auto-retry ML jobs — surface errors instead)
     task_max_retries=0,
+
+    # Default queue — ensures all tasks route to the 'training' queue
+    task_default_queue="training",
 )

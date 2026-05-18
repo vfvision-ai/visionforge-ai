@@ -196,15 +196,18 @@ def _dispatch_task(job_id: str, payload: TrainingSubmit, output_dir: str):
         "framework": payload.framework,
     }
 
-    return task_fn.delay(
-        job_id,
-        payload.dataset_config,
-        model_config_dict,
-        {
-            "epochs": payload.epochs,
-            "lr": payload.learning_rate,
-            "batch_size": payload.batch_size,
-            "optimize_hyperparams": payload.optimize_hyperparams,
-        },
-        output_dir,
+    return task_fn.apply_async(
+        args=[
+            job_id,
+            payload.dataset_config,
+            model_config_dict,
+            {
+                "epochs": payload.epochs,
+                "lr": payload.learning_rate,
+                "batch_size": payload.batch_size,
+                "optimize_hyperparams": payload.optimize_hyperparams,
+            },
+            output_dir,
+        ],
+        queue="training",
     )

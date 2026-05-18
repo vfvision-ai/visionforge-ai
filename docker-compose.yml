@@ -81,7 +81,7 @@ services:
   worker:
     <<: *common
     container_name: cv-worker
-    command: celery -A workers.celery_app worker --loglevel=info --concurrency=2 -Q training
+    command: celery -A workers.celery_app worker --loglevel=info --concurrency=2 -Q training -E
     healthcheck:
       test: [CMD, celery, -A, workers.celery_app, inspect, ping]
       interval: 30s
