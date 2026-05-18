@@ -36,8 +36,10 @@ export default function InferencePage() {
 
   useEffect(() => {
     getModels().then(data => {
-      const prod = data.models.filter(m => m.is_production)
-      const list = prod.length ? prod : data.models
+      // Show all models; prefer production ones at the top
+      const prod    = data.models.filter(m => m.is_production)
+      const nonProd = data.models.filter(m => !m.is_production)
+      const list    = [...prod, ...nonProd]
       setModels(list)
       if (list.length) setModelId(list[0].id)
     }).catch(() => {})
@@ -157,7 +159,7 @@ export default function InferencePage() {
       {models.length === 0 && (
         <div className="p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-sm text-yellow-400 flex items-start gap-2">
           <AlertCircle size={16} className="mt-0.5 shrink-0" />
-          No saved models available. Train a model first, then promote it or use any saved model.
+          <span>No saved models yet. Complete a training job to automatically register a model, then come back here to run inference. If you have existing jobs, click <strong>Repair Models</strong> on the <a href="/models" className="underline">Models page</a>.</span>
         </div>
       )}
 
@@ -166,7 +168,10 @@ export default function InferencePage() {
         <h2 className="text-sm font-semibold text-slate-300 mb-4">Model &amp; Settings</h2>
         <div className="space-y-4">
           <Select label="Model" value={modelId} onChange={e => setModelId(e.target.value)}
-            options={models.map(m => ({ value: m.id, label: `${m.name} (${m.framework})` }))}
+            options={models.map(m => ({
+              value: m.id,
+              label: `${m.name}${m.is_production ? ' ★' : ''} | ${m.framework} | ${m.val_accuracy != null ? (m.val_accuracy * 100).toFixed(1) + '%' : 'n/a'}`,
+            }))}
             disabled={models.length === 0} />
           <div className="grid grid-cols-2 gap-4">
             <div>

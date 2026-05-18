@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from db.database import init_db
-from api.routes import training, models, experiments, health
+from api.routes import training, models, experiments, health, inference
 
 logger = logging.getLogger(__name__)
 
@@ -78,3 +78,4 @@ app.include_router(health.router,       tags=["Health"])
 app.include_router(experiments.router,  prefix="/api/v1/experiments",  tags=["Experiments"])
 app.include_router(training.router,     prefix="/api/v1/training",      tags=["Training"])
 app.include_router(models.router,       prefix="/api/v1/models",        tags=["Models"])
+app.include_router(inference.router,    prefix="/api/v1/inference",     tags=["Inference"])

@@ -1,11 +1,11 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Package, CheckCircle2, RefreshCw, Download, Trash2, ChevronUp, ChevronDown, FileDown, X } from 'lucide-react'
+import { Package, CheckCircle2, RefreshCw, Download, Trash2, ChevronUp, ChevronDown, FileDown, X, Wrench } from 'lucide-react'
 import Card from '@/components/Card'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import { Select, Input } from '@/components/FormControls'
-import { getModels, promoteModel, deleteModel } from '@/lib/api'
+import { getModels, promoteModel, deleteModel, backfillModels } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
 import type { ModelVersion } from '@/types'
 
@@ -40,6 +40,8 @@ export default function ModelsPage() {
   const [exportModel, setExportModel] = useState<ModelVersion | null>(null)
   const [exportFmt,   setExportFmt]   = useState('onnx')
   const [exportSize,  setExportSize]  = useState('224')
+  const [backfilling, setBackfilling] = useState(false)
+  const [backfillMsg, setBackfillMsg] = useState('')
 
   async function load() {
     setLoading(true); setError('')
@@ -65,6 +67,20 @@ export default function ModelsPage() {
 
   function handleDownload(id: string) {
     window.open(`/api/v1/models/${id}/download`, '_blank')
+  }
+
+  async function handleBackfill() {
+    setBackfilling(true); setBackfillMsg('')
+    try {
+      const res = await backfillModels()
+      if (res.backfilled > 0) {
+        setBackfillMsg(`✓ Registered ${res.backfilled} previously unregistered model${res.backfilled !== 1 ? 's' : ''}.`)
+        await load()
+      } else {
+        setBackfillMsg('All completed jobs already have a registered model.')
+      }
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Repair failed') }
+    finally { setBackfilling(false) }
   }
 
   async function handleExport(m: ModelVersion, fmt: string, inputSize: string) {
@@ -120,10 +136,14 @@ export default function ModelsPage() {
           </h1>
           <p className="text-sm text-slate-500 mt-1">{models.length} saved model version{models.length !== 1 ? 's' : ''}</p>
         </div>
-        <Button variant="secondary" size="sm" icon={<RefreshCw size={14} />} onClick={load} loading={loading}>Refresh</Button>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" size="sm" icon={<Wrench size={14} />} onClick={handleBackfill} loading={backfilling}>Repair Models</Button>
+          <Button variant="secondary" size="sm" icon={<RefreshCw size={14} />} onClick={load} loading={loading}>Refresh</Button>
+        </div>
       </div>
 
       {error && <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400">{error}</div>}
+      {backfillMsg && <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-sm text-green-400">{backfillMsg}</div>}
 
       {/* Filters + Search */}
       <div className="flex items-center gap-3 flex-wrap">

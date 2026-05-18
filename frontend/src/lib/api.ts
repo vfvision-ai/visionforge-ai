@@ -95,7 +95,9 @@ export async function generateTestSamples(jobId: string, numSamples: number, fmt
 export const getModels = (skip = 0, limit = 100) =>
   request<{ models: ModelVersion[]; total: number }>(`/models/?skip=${skip}&limit=${limit}`)
 
-export const promoteModel = (id: string) =>
+export const promoteModel  = (id: string) =>
   request<ModelVersion>(`/models/${id}/promote`, { method: 'POST', body: '{}' })
-export const deleteModel  = (id: string) =>
+export const deleteModel   = (id: string) =>
   request<void>(`/models/${id}`, { method: 'DELETE' })
+export const backfillModels = () =>
+  request<{ backfilled: number; model_ids: string[] }>('/models/backfill', { method: 'POST', body: '{}' })

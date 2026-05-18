@@ -70,6 +70,64 @@ def delete_model(
     db.commit()
 
 
+@router.post(
+    "/backfill",
+    summary="Create ModelVersion records for completed jobs that have none",
+)
+def backfill_models(
+    db: Session = Depends(get_db),
+    _: str = Depends(require_api_key),
+):
+    """
+    One-shot repair: scans all COMPLETED TrainingJobs that have a model_path
+    but no corresponding ModelVersion record and creates one for each.
+    Safe to call repeatedly — idempotent.
+    """
+    from db.models import ModelVersion as MV, TrainingJob as TJ, JobStatus
+
+    orphan_jobs = (
+        db.query(TJ)
+        .outerjoin(MV, TJ.id == MV.job_id)
+        .filter(TJ.status == JobStatus.COMPLETED)
+        .filter(TJ.model_path.isnot(None))
+        .filter(MV.id.is_(None))
+        .all()
+    )
+
+    created = []
+    for job in orphan_jobs:
+        results = job.results or {}
+        _f = lambda *keys: next(  # noqa: E731
+            (float(results[k]) for k in keys if results.get(k) is not None), None
+        )
+        val_acc  = _f("best_accuracy", "val_accuracy", "best_miou", "best_map")
+        val_loss = _f("best_loss", "val_loss")
+        extra_keys = {"best_precision", "best_recall", "best_f1", "best_miou", "best_map"}
+        extra = {k: results[k] for k in extra_keys if results.get(k) is not None}
+
+        num_classes = results.get("num_classes")
+        if num_classes is None and job.dataset_config:
+            num_classes = job.dataset_config.get("num_classes")
+
+        mv = crud.create_model_version(
+            db=db,
+            job_id=job.id,
+            name=f"{job.architecture} \u2013 {job.dataset_name}",
+            architecture=job.architecture,
+            framework=job.framework,
+            task_type=job.task_type,
+            model_path=job.model_path,
+            num_classes=int(num_classes) if num_classes is not None else None,
+            val_accuracy=val_acc,
+            val_loss=val_loss,
+            extra_metrics=extra,
+        )
+        created.append(mv.id)
+
+    db.commit()
+    return {"backfilled": len(created), "model_ids": created}
+
+
 @router.get("/{model_id}/download", summary="Download the model file")
 def download_model(
     model_id: str,

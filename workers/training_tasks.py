@@ -266,7 +266,8 @@ def _mark_running(job_id: str, celery_task_id: str):
 
 
 def _mark_complete(job_id: str, results: Dict, model_path: str):
-    """Persist completed job, normalising training_history to a list of per-epoch dicts."""
+    """Persist completed job, normalising training_history to a list of per-epoch dicts,
+    and create a ModelVersion record so the Models page is populated."""
     raw_history = results.get("training_history", [])
 
     # TF/sklearn trainers return  {'train_accuracy': [...], 'val_loss': [...], ...}
@@ -285,11 +286,54 @@ def _mark_complete(job_id: str, results: Dict, model_path: str):
         training_history = raw_history or []
 
     with db_session() as db:
-        crud.complete_job(
+        job = crud.complete_job(
             db,
             job_id,
             results=results,
             model_path=model_path,
             training_history=training_history,
         )
+
+        # Create a ModelVersion record so the /models endpoint is populated.
+        # Guard against duplicate inserts (unique constraint on job_id).
+        if job and model_path:
+            try:
+                from db.models import ModelVersion as MV
+                existing = db.query(MV).filter_by(job_id=job_id).first()
+                if not existing:
+                    # Extract primary accuracy / loss metrics from results dict
+                    _f = lambda *keys: next(
+                        (float(results[k]) for k in keys if results.get(k) is not None), None
+                    )
+                    val_acc  = _f("best_accuracy", "val_accuracy", "best_val_accuracy",
+                                  "best_miou", "best_map")
+                    val_loss = _f("best_loss", "val_loss", "best_val_loss")
+                    extra_keys = {
+                        "best_precision", "best_recall", "best_f1",
+                        "best_miou", "best_map", "num_params", "total_params",
+                    }
+                    extra_metrics = {k: results[k] for k in extra_keys if results.get(k) is not None}
+
+                    # num_classes: try results first, fall back to dataset_config via job
+                    num_classes = results.get("num_classes")
+                    if num_classes is None and job.dataset_config:
+                        num_classes = job.dataset_config.get("num_classes")
+
+                    crud.create_model_version(
+                        db=db,
+                        job_id=job_id,
+                        name=f"{job.architecture} \u2013 {job.dataset_name}",
+                        architecture=job.architecture,
+                        framework=job.framework,
+                        task_type=job.task_type,
+                        model_path=model_path,
+                        num_classes=int(num_classes) if num_classes is not None else None,
+                        val_accuracy=val_acc,
+                        val_loss=val_loss,
+                        extra_metrics=extra_metrics,
+                    )
+                    logger.info("[job=%s] ModelVersion created (path=%s)", job_id, model_path)
+            except Exception as mv_exc:
+                # Non-fatal — job is already marked complete; log and continue
+                logger.warning("[job=%s] Could not create ModelVersion: %s", job_id, mv_exc)
 
