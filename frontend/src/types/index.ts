@@ -99,4 +99,9 @@ export interface TrainingSubmitPayload {
   batch_size: number
   optimize_hyperparams: boolean
   experiment_id?: string
+  early_stopping?: boolean
+  patience?: number
+  min_delta?: number
+  n_trials?: number
+  experiment_name?: string
 }

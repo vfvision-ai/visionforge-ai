@@ -125,13 +125,12 @@ export default function TrainingPage() {
         learning_rate:        form.learning_rate,
         batch_size:           form.batch_size,
         optimize_hyperparams: form.optimize_hyperparams,
-        dataset_config: {
-          early_stopping:  form.early_stopping,
-          patience:        form.patience,
-          min_delta:       form.min_delta,
-          n_trials:        form.n_trials,
-          experiment_name: form.experiment_name,
-        },
+        early_stopping:       form.early_stopping,
+        patience:             form.patience,
+        min_delta:            form.min_delta,
+        n_trials:             form.n_trials,
+        experiment_name:      form.experiment_name,
+        dataset_config:       {},
       }
       const job = await submitJob(payload)
       router.push(`/results/${job.id}`)

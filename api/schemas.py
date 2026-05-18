@@ -43,6 +43,13 @@ class TrainingSubmit(BaseModel):
     learning_rate: float    = Field(default=0.001, gt=0, lt=1.0)
     batch_size: int         = Field(default=32,    ge=1, le=512)
     optimize_hyperparams: bool = Field(default=False)
+    n_trials: int           = Field(default=20,    ge=1, le=200)
+    experiment_name: str    = Field(default="")
+
+    # Early stopping
+    early_stopping: bool    = Field(default=False)
+    patience: int           = Field(default=10,    ge=1, le=100)
+    min_delta: float        = Field(default=0.001, ge=0.0)
 
     experiment_id: Optional[str] = Field(default=None)
 
