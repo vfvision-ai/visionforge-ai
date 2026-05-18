@@ -89,7 +89,7 @@ class JobResponse(BaseModel):
     output_dir: Optional[str]
     model_path: Optional[str]
     results: Optional[Dict[str, Any]]
-    training_history: Optional[List[Dict[str, Any]]]
+    training_history: Optional[Any]   # list of per-epoch dicts OR keyed-by-metric dict
     duration_seconds: Optional[float]
 
 

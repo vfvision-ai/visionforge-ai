@@ -266,12 +266,30 @@ def _mark_running(job_id: str, celery_task_id: str):
 
 
 def _mark_complete(job_id: str, results: Dict, model_path: str):
+    """Persist completed job, normalising training_history to a list of per-epoch dicts."""
+    raw_history = results.get("training_history", [])
+
+    # TF/sklearn trainers return  {'train_accuracy': [...], 'val_loss': [...], ...}
+    # Convert to  [{'epoch': 1, 'train_accuracy': 0.9, ...}, ...] for consistent storage
+    if isinstance(raw_history, dict):
+        metric_lists = {k: v for k, v in raw_history.items() if isinstance(v, list)}
+        if metric_lists:
+            n_epochs = max(len(v) for v in metric_lists.values())
+            training_history = [
+                {"epoch": i + 1, **{k: v[i] for k, v in metric_lists.items() if i < len(v)}}
+                for i in range(n_epochs)
+            ]
+        else:
+            training_history = []
+    else:
+        training_history = raw_history or []
+
     with db_session() as db:
         crud.complete_job(
             db,
             job_id,
             results=results,
             model_path=model_path,
-            training_history=results.get("training_history", []),
+            training_history=training_history,
         )
 
