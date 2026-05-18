@@ -104,8 +104,8 @@ export default function JobDetailPage() {
                     : 'Accuracy'
   const metricData = job.training_history?.map((m, i) => ({
     epoch: m.epoch ?? i + 1,
-    train: metricKey === 'accuracy' ? (m.train_accuracy ?? null) : metricKey === 'miou' ? (m.train_miou ?? null) : null,
-    val:   metricKey === 'accuracy' ? (m.val_accuracy ?? null)   : metricKey === 'miou' ? (m.val_miou ?? null)   : null,
+    train: metricKey === 'accuracy' ? (m.train_accuracy ?? null) : metricKey === 'miou' ? (m.train_miou ?? null) : metricKey === 'map' ? (m.train_map50 ?? null) : null,
+    val:   metricKey === 'accuracy' ? (m.val_accuracy ?? null)   : metricKey === 'miou' ? (m.val_miou ?? null)   : metricKey === 'map' ? (m.val_map50 ?? null)   : null,
   })).filter(d => d.train != null || d.val != null) ?? []
 
   const lastMetrics   = job.training_history?.[job.training_history.length - 1]
@@ -113,6 +113,7 @@ export default function JobDetailPage() {
   const latestMetric  = lastMetrics
     ? (metricKey === 'accuracy' ? (lastMetrics.val_accuracy ?? lastMetrics.train_accuracy)
      : metricKey === 'miou'     ? (lastMetrics.val_miou ?? lastMetrics.train_miou)
+     : metricKey === 'map'      ? (lastMetrics.val_map50 ?? null)
      : null) as number | null
     : null
 

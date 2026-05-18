@@ -26,7 +26,6 @@ _IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".gif", ".tiff"}
 _BUILTIN_PREPROCESS: Dict[str, Dict] = {
     "mnist":        {"size": (28, 28),   "channels": 1, "mean": None, "std": None},
     "fashionmnist": {"size": (28, 28),   "channels": 1, "mean": None, "std": None},
-    "fashionmnist": {"size": (28, 28),   "channels": 1, "mean": None, "std": None},
     "cifar10":      {"size": (32, 32),   "channels": 3, "mean": None, "std": None},
     "cifar100":     {"size": (32, 32),   "channels": 3, "mean": None, "std": None},
     "stl10":        {"size": (96, 96),   "channels": 3, "mean": None, "std": None},
