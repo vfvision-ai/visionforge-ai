@@ -137,10 +137,10 @@ export default function DashboardPage() {
           </h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { label: 'PyTorch',    ok: !!sysInfo.pytorch_version,    detail: sysInfo.pytorch_version ?? 'not installed' },
+              { label: 'PyTorch',    ok: !!sysInfo.pytorch,    detail: sysInfo.pytorch ?? 'not installed' },
               { label: 'CUDA',       ok: !!sysInfo.cuda_available,     detail: sysInfo.cuda_available ? (sysInfo.gpu_name ?? sysInfo.cuda_version ?? 'available') : 'CPU only' },
-              { label: 'TensorFlow', ok: !!sysInfo.tensorflow_version, detail: sysInfo.tensorflow_version ?? 'not installed' },
-              { label: 'Optuna',     ok: !!sysInfo.optuna_version,     detail: sysInfo.optuna_version ?? 'not installed' },
+              { label: 'TensorFlow', ok: !!sysInfo.tensorflow, detail: sysInfo.tensorflow ?? 'not installed' },
+              { label: 'Optuna',     ok: !!sysInfo.optuna,     detail: sysInfo.optuna ?? 'not installed' },
             ].map(s => (
               <div key={s.label} className="flex items-center gap-2 bg-surface-900 rounded-lg p-3">
                 <span className={`w-2 h-2 rounded-full shrink-0 ${s.ok ? 'bg-green-400' : 'bg-slate-600'}`} />
