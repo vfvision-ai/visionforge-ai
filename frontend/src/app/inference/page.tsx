@@ -38,7 +38,7 @@ export default function InferencePage() {
   const [mode, setMode]             = useState<Mode>('single')
   const [zipFile,    setZipFile]    = useState<File | null>(null)
   const [zipRunning, setZipRunning] = useState(false)
-  const [zipResult,  setZipResult]  = useState<{ csvUrl: string; total: number; correct: number; accuracy: string } | null>(null)
+  const [zipResult,  setZipResult]  = useState<{ csvUrl: string; total: number; correct: number; accuracy: string; hasLabels: boolean } | null>(null)
   const [zipError,   setZipError]   = useState('')
 
   useEffect(() => {
@@ -118,14 +118,54 @@ export default function InferencePage() {
         const j = await res.json().catch(() => ({}))
         throw new Error((j as { detail?: string }).detail || `HTTP ${res.status}`)
       }
-      const blob = await res.blob()
-      const csvUrl = URL.createObjectURL(blob)
-      const total    = parseInt(res.headers.get('X-Total-Images') ?? '0', 10)
-      const correct  = parseInt(res.headers.get('X-Correct')      ?? '0', 10)
-      // X-Accuracy is sent without '%' to avoid proxy stripping the header; add it back here
-      const accRaw   = res.headers.get('X-Accuracy')
-      const accuracy = accRaw && accRaw !== 'N/A' ? `${accRaw}%` : 'n/a'
-      setZipResult({ csvUrl, total, correct, accuracy })
+
+      // Read as text first so we can parse stats AND still offer the CSV for download
+      const csvText = await res.text()
+      const csvUrl  = URL.createObjectURL(new Blob([csvText], { type: 'text/csv' }))
+
+      // ── Client-side stats computation ─────────────────────────────────────
+      // Parses the CSV directly so accuracy is correct regardless of whether
+      // response headers are stripped by a proxy or the backend is an older
+      // build that leaves the 'correct' column empty.
+      //
+      // CSV columns: image_name, true_label, true_label_name, predicted_class, confidence_%, correct
+      const dataLines = csvText.trim().split('\n').filter(l => l.trim()).slice(1)
+      const total        = dataLines.length
+      let totalLabelled  = 0
+      let correctCount   = 0
+
+      for (const line of dataLines) {
+        const cols         = line.split(',')
+        const trueLabel      = (cols[1] ?? '').trim()
+        const trueLabelName  = (cols[2] ?? '').trim()
+        const predictedClass = (cols[3] ?? '').trim()
+        const correctCol     = (cols[5] ?? '').trim() // pre-computed by backend
+
+        if (!trueLabelName && !trueLabel) continue // no ground truth
+        totalLabelled++
+
+        // 1. Use the backend-computed column when available
+        if (correctCol === '1') { correctCount++; continue }
+        if (correctCol === '0') continue
+
+        // 2. Frontend fallback comparison (handles old backend or edge cases)
+        // 2a. Direct case-insensitive name match
+        if (trueLabelName && predictedClass &&
+            trueLabelName.toLowerCase() === predictedClass.toLowerCase()) {
+          correctCount++; continue
+        }
+        // 2b. "Class N" pattern: predicted "Class 7" vs true_label "7"
+        const classNum = predictedClass.match(/^[Cc]lass\s*(\d+)$/)
+        if (classNum && trueLabel === classNum[1]) { correctCount++; continue }
+        // 2c. Numeric string equality
+        if (trueLabel && predictedClass === trueLabel) { correctCount++ }
+      }
+
+      const hasLabels = totalLabelled > 0
+      const accuracy  = hasLabels
+        ? `${(correctCount / totalLabelled * 100).toFixed(1)}%`
+        : 'n/a'
+      setZipResult({ csvUrl, total, correct: correctCount, accuracy, hasLabels })
     } catch (e: unknown) { setZipError(e instanceof Error ? e.message : 'ZIP inference failed') }
     finally { setZipRunning(false) }
   }
@@ -404,8 +444,8 @@ export default function InferencePage() {
                 <div><p className="text-xs text-slate-500">Correct</p><p className="text-lg font-bold text-green-400">{zipResult.correct}</p></div>
                 <div><p className="text-xs text-slate-500">Accuracy</p><p className="text-lg font-bold text-brand-400">{zipResult.accuracy}</p></div>
               </div>
-              {zipResult.accuracy === 'n/a' && (
-                <p className="text-xs text-slate-500 text-center">No labels.csv found — accuracy unavailable</p>
+              {!zipResult.hasLabels && (
+                <p className="text-xs text-slate-500 text-center">No ground-truth labels in ZIP — add a labels.csv to see accuracy</p>
               )}
               <Button variant="secondary" className="w-full justify-center" icon={<Download size={14} />} onClick={downloadZipCSV}>
                 Download Results CSV
