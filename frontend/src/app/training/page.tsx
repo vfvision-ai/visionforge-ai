@@ -114,6 +114,22 @@ const BATCH_OPTIONS = [
   { value: '128', label: '128' },
   { value: '256', label: '256' },
 ]
+const INPUT_SIZE_OPTIONS = [
+  { value: 'auto', label: 'Auto (inferred from dataset / architecture)' },
+  { value: '28',   label: '28 × 28   — MNIST, Fashion-MNIST' },
+  { value: '32',   label: '32 × 32   — CIFAR-10, CIFAR-100' },
+  { value: '64',   label: '64 × 64' },
+  { value: '96',   label: '96 × 96   — STL-10' },
+  { value: '128',  label: '128 × 128' },
+  { value: '160',  label: '160 × 160' },
+  { value: '224',  label: '224 × 224 — ResNet, EfficientNet, MobileNet, ViT' },
+  { value: '256',  label: '256 × 256' },
+  { value: '299',  label: '299 × 299 — Inception V3' },
+  { value: '320',  label: '320 × 320' },
+  { value: '416',  label: '416 × 416 — YOLO (small)' },
+  { value: '512',  label: '512 × 512' },
+  { value: '640',  label: '640 × 640 — YOLOv8 default' },
+]
 
 interface Preset { label: string; icon: string; epochs: number; lr: number; batch: number; hpo: boolean; desc: string }
 const PRESETS: Preset[] = [
@@ -129,6 +145,7 @@ interface FormState {
   architecture: string; epochs: number; learning_rate: number
   batch_size: number; optimize_hyperparams: boolean; n_trials: number
   early_stopping: boolean; patience: number; min_delta: number
+  input_size: string
 }
 
 export default function TrainingPage() {
@@ -140,6 +157,7 @@ export default function TrainingPage() {
     epochs: 20, learning_rate: 0.001, batch_size: 32,
     optimize_hyperparams: false, n_trials: 20,
     early_stopping: false, patience: 10, min_delta: 0.001,
+    input_size: 'auto',
   })
   const [activePreset,  setActivePreset]  = useState<string | null>(null)
   const [showAdvanced,  setShowAdvanced]  = useState(false)
@@ -192,7 +210,9 @@ export default function TrainingPage() {
         min_delta:            form.min_delta,
         n_trials:             form.n_trials,
         experiment_name:      form.experiment_name,
-        dataset_config:       {},
+        dataset_config:       form.input_size !== 'auto'
+          ? { image_size: [parseInt(form.input_size, 10), parseInt(form.input_size, 10)] }
+          : {},
       }
       const job = await submitJob(payload)
       router.push(`/results/${job.id}`)
@@ -310,6 +330,13 @@ export default function TrainingPage() {
             <Select label="Batch Size" value={String(form.batch_size)}
               onChange={e => set('batch_size', Number(e.target.value))} options={BATCH_OPTIONS} />
           </div>
+          <div className="mt-4">
+            <Select label="Input Image Size" value={form.input_size}
+              onChange={e => set('input_size', e.target.value)} options={INPUT_SIZE_OPTIONS} />
+            <p className="text-xs text-slate-500 mt-1.5">
+              Images are resized to this resolution before training. &quot;Auto&quot; uses the dataset default (e.g. 28×28 for MNIST, 224×224 for ImageNet-scale models).
+            </p>
+          </div>
           <div className="mt-4 space-y-3">
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" className="w-4 h-4 accent-brand-500"
@@ -379,6 +406,7 @@ export default function TrainingPage() {
                 ['Task', form.task_type],             ['Framework', form.framework],
                 ['Architecture', form.architecture],  ['Epochs', form.epochs],
                 ['Learning Rate', form.learning_rate],['Batch Size', form.batch_size],
+                ['Input Size', form.input_size === 'auto' ? 'Auto' : `${form.input_size}×${form.input_size}`],
                 ['HPO', form.optimize_hyperparams ? `Yes (${form.n_trials} trials)` : 'No'],
                 ['Early Stopping', form.early_stopping ? `Yes (patience=${form.patience})` : 'No'],
                 ['Est. Time', `~${estMinutes} min`],

@@ -110,6 +110,15 @@ def _safe_dataset_info(dataset_name: str, task_type: str, dataset_config: Dict[s
             "builtin_dataset_name":   dataset_name,
         }
 
+    # Allow user-supplied image_size to override the builtin default.
+    # dataset_config sends it as a JSON list e.g. [224, 224].
+    user_size = dataset_config.get("image_size")
+    if user_size is not None:
+        try:
+            safe["image_size"] = (int(user_size[0]), int(user_size[1]))
+        except (TypeError, IndexError, ValueError):
+            pass
+
     return DatasetInfo(**safe)
 
 
