@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from api.schemas import ExperimentCreate, ExperimentResponse
+from api.schemas import ExperimentCreate, ExperimentResponse, ExperimentListResponse
 from api.dependencies import get_db, require_api_key
 from db import crud
 
@@ -24,9 +24,11 @@ def create_experiment(
     return exp
 
 
-@router.get("/", response_model=list[ExperimentResponse])
+@router.get("/", response_model=ExperimentListResponse)
 def list_experiments(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    return crud.list_experiments(db, skip=skip, limit=limit)
+    experiments = crud.list_experiments(db, skip=skip, limit=limit)
+    total = crud.count_experiments(db)
+    return ExperimentListResponse(total=total, experiments=experiments)
 
 
 @router.get("/{exp_id}", response_model=ExperimentResponse)

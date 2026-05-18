@@ -26,6 +26,10 @@ def list_experiments(db: Session, skip: int = 0, limit: int = 100) -> List[Exper
     return db.query(Experiment).order_by(Experiment.created_at.desc()).offset(skip).limit(limit).all()
 
 
+def count_experiments(db: Session) -> int:
+    return db.query(Experiment).count()
+
+
 # ── Training jobs ─────────────────────────────────────────────────────────────
 def create_job(
     db: Session,
@@ -70,6 +74,19 @@ def list_jobs(
     if framework:
         q = q.filter(TrainingJob.framework == framework)
     return q.order_by(TrainingJob.created_at.desc()).offset(skip).limit(limit).all()
+
+
+def count_jobs(
+    db: Session,
+    status: Optional[str] = None,
+    framework: Optional[str] = None,
+) -> int:
+    q = db.query(TrainingJob)
+    if status:
+        q = q.filter(TrainingJob.status == status)
+    if framework:
+        q = q.filter(TrainingJob.framework == framework)
+    return q.count()
 
 
 def start_job(db: Session, job_id: str, celery_task_id: str) -> Optional[TrainingJob]:
@@ -165,8 +182,32 @@ def create_model_version(
     return mv
 
 
-def list_models(db: Session, skip: int = 0, limit: int = 50) -> List[ModelVersion]:
-    return db.query(ModelVersion).order_by(ModelVersion.created_at.desc()).offset(skip).limit(limit).all()
+def list_models(
+    db: Session,
+    skip: int = 0,
+    limit: int = 200,
+    framework: Optional[str] = None,
+    task_type: Optional[str] = None,
+) -> List[ModelVersion]:
+    q = db.query(ModelVersion)
+    if framework:
+        q = q.filter(ModelVersion.framework == framework)
+    if task_type:
+        q = q.filter(ModelVersion.task_type == task_type)
+    return q.order_by(ModelVersion.created_at.desc()).offset(skip).limit(limit).all()
+
+
+def count_models(
+    db: Session,
+    framework: Optional[str] = None,
+    task_type: Optional[str] = None,
+) -> int:
+    q = db.query(ModelVersion)
+    if framework:
+        q = q.filter(ModelVersion.framework == framework)
+    if task_type:
+        q = q.filter(ModelVersion.task_type == task_type)
+    return q.count()
 
 
 def promote_model(db: Session, model_id: str) -> Optional[ModelVersion]:

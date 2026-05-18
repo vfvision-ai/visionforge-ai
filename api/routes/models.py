@@ -21,17 +21,14 @@ router = APIRouter()
 @router.get("/", response_model=ModelListResponse, summary="List saved model versions")
 def list_models(
     skip: int = 0,
-    limit: int = 50,
+    limit: int = 200,
     framework: Optional[str] = None,
     task_type: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
-    models = crud.list_models(db, skip=skip, limit=limit)
-    if framework:
-        models = [m for m in models if m.framework == framework]
-    if task_type:
-        models = [m for m in models if m.task_type == task_type]
-    return ModelListResponse(total=len(models), models=models)
+    models = crud.list_models(db, skip=skip, limit=limit, framework=framework, task_type=task_type)
+    total = crud.count_models(db, framework=framework, task_type=task_type)
+    return ModelListResponse(total=total, models=models)
 
 
 @router.post(

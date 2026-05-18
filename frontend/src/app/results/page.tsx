@@ -44,10 +44,11 @@ export default function ResultsPage() {
   const visible = filter === 'all' ? jobs : jobs.filter(j => j.status === filter)
 
   function sortVal(job: TrainingJob): number | string {
-    if (sortKey === 'created_at') return job.created_at ?? ''
-    if (sortKey === 'architecture') return job.architecture ?? ''
-    if (sortKey === 'framework') return job.framework ?? ''
-    if (sortKey === 'status') return job.status ?? ''
+    if (sortKey === 'created_at')    return job.created_at ?? ''
+    if (sortKey === 'dataset_name')  return job.dataset_name ?? ''
+    if (sortKey === 'architecture')  return job.architecture ?? ''
+    if (sortKey === 'framework')     return job.framework ?? ''
+    if (sortKey === 'status')        return job.status ?? ''
     if (sortKey === 'accuracy') {
       return (job.results?.best_accuracy ?? job.results?.best_miou ?? job.results?.best_map ?? -1) as number
     }

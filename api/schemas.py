@@ -119,6 +119,11 @@ class ModelResponse(BaseModel):
     created_at: datetime
 
 
+class ExperimentListResponse(BaseModel):
+    total: int
+    experiments: List[ExperimentResponse]
+
+
 class ModelListResponse(BaseModel):
     total: int
     models: List[ModelResponse]

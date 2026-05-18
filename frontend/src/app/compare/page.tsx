@@ -23,7 +23,7 @@ function metricOf(job: TrainingJob): number | null {
   if (!h?.length) return null
   const last = h[h.length - 1]
   if (job.task_type === 'segmentation') return last.val_miou ?? last.train_miou ?? null
-  if (job.task_type === 'detection')    return last.val_miou ?? null  // use available
+  if (job.task_type === 'detection')    return last.val_map50 ?? null
   return last.val_accuracy ?? last.train_accuracy ?? null
 }
 

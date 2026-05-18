@@ -34,7 +34,7 @@ export default function DashboardPage() {
   async function load(quiet = false) {
     if (!quiet) setLoading(true)
     try {
-      const [j, m, e, h] = await Promise.all([getJobs({ limit: 10 }), getModels(), getExperiments(), getHealth()])
+      const [j, m, e, h] = await Promise.all([getJobs({ limit: 1000 }), getModels(), getExperiments(), getHealth()])
       setJobs(j.jobs)
       setCounts({ experiments: e.total, models: m.total })
       setHealth(h)
@@ -195,7 +195,7 @@ export default function DashboardPage() {
         )}
       </Card>
 
-      {/* Recent Jobs */}
+        {/* Recent Jobs — latest 10 */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
@@ -232,13 +232,13 @@ export default function DashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {jobs.map((job, i) => {
+                {jobs.slice(0, 10).map((job, i) => {
                   const acc = job.results?.best_accuracy ?? job.results?.best_miou ?? job.results?.best_map
                   return (
                     <tr
                       key={job.id}
                       onClick={() => router.push(`/results/${job.id}`)}
-                      className={`border-b border-surface-700 hover:bg-surface-700 transition-colors cursor-pointer ${i === jobs.length - 1 ? 'border-b-0' : ''}`}
+                      className={`border-b border-surface-700 hover:bg-surface-700 transition-colors cursor-pointer ${i === Math.min(jobs.length, 10) - 1 ? 'border-b-0' : ''}`}
                     >
                       <td className="px-5 py-3 text-white font-medium">{job.dataset_name}</td>
                       <td className="px-5 py-3 text-slate-400">{job.architecture}</td>

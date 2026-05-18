@@ -245,6 +245,7 @@ export default function TrainingPage() {
               onChange={e => {
                 const newTask = e.target.value
                 set('task_type', newTask)
+                setActivePreset(null)
                 const newArchs = (ARCHITECTURES[form.framework] ?? ARCHITECTURES.pytorch)[newTask] ?? ARCHITECTURES.pytorch.classification
                 set('architecture', newArchs[0]?.value ?? '')
               }} options={TASK_TYPES} />
@@ -252,6 +253,7 @@ export default function TrainingPage() {
               onChange={e => {
                 const newFw = e.target.value
                 set('framework', newFw)
+                setActivePreset(null)
                 const newArchs = (ARCHITECTURES[newFw] ?? ARCHITECTURES.pytorch)[form.task_type] ?? ARCHITECTURES.pytorch.classification
                 set('architecture', newArchs[0]?.value ?? '')
               }} options={FRAMEWORKS} />

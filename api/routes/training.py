@@ -108,13 +108,14 @@ def submit_training_job(
 @router.get("/", response_model=JobListResponse, summary="List training jobs")
 def list_jobs(
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=1000),
     status_filter: Optional[str] = Query(None, alias="status"),
     framework: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     jobs = crud.list_jobs(db, skip=skip, limit=limit, status=status_filter, framework=framework)
-    return JobListResponse(total=len(jobs), jobs=jobs)
+    total = crud.count_jobs(db, status=status_filter, framework=framework)
+    return JobListResponse(total=total, jobs=jobs)
 
 
 @router.get("/{job_id}", response_model=JobResponse, summary="Get job status")
