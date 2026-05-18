@@ -27,13 +27,51 @@ from db import crud
 logger = get_task_logger(__name__)
 
 # Fields that belong to DatasetInfo dataclass â€” anything else is stripped
-_DATASET_INFO_FIELDS = {
+_DATASET_INFO_FIELDS = {  # noqa: E501
     "task_type", "num_classes", "num_samples", "class_names", "class_distribution",
     "image_size", "image_stats", "has_annotations", "annotation_format",
     "recommended_batch_size", "estimated_training_time", "dataset_path", "channels",
     "is_hf_dataset", "hf_dataset_name", "hf_subset", "hf_features", "hf_description",
     "is_builtin", "builtin_dataset_name", "builtin_tf_name",
 }
+
+
+def _build_config(
+    ds_info: Any,
+    model_config_dict: Dict[str, Any],
+    hyperparams: Dict[str, Any],
+    output_dir: str,
+) -> Any:
+    """Build a Config object the trainers accept, with safe defaults."""
+    from pathlib import Path
+    from core.model_selector import ModelConfig
+    from utils.config import Config
+
+    mc = ModelConfig(
+        architecture=model_config_dict.get("architecture", "adaptive_cnn"),
+        backbone=model_config_dict.get("backbone", "none"),
+        num_parameters=model_config_dict.get("num_parameters", 0),
+        input_size=tuple(model_config_dict.get("input_size", [224, 224])),
+        pretrained=model_config_dict.get("pretrained", False),
+        config_params=model_config_dict.get("config_params", {}),
+        estimated_flops=model_config_dict.get("estimated_flops", 0),
+        memory_requirements=model_config_dict.get("memory_requirements", 0.5),
+        framework=model_config_dict.get("framework", "pytorch"),
+    )
+
+    patience = hyperparams.get("patience", 10)
+    use_early_stop = hyperparams.get("early_stopping", False)
+
+    return Config(
+        dataset_info=ds_info,
+        model_config=mc,
+        dataset_path=Path(ds_info.dataset_path or output_dir),
+        output_dir=Path(output_dir),
+        max_epochs=hyperparams.get("epochs", 50),
+        learning_rate=hyperparams.get("lr", 0.001),
+        batch_size=hyperparams.get("batch_size", 32),
+        early_stopping_patience=patience if use_early_stop else 0,
+    )
 
 
 def _safe_dataset_info(dataset_name: str, task_type: str, dataset_config: Dict[str, Any]):
@@ -97,7 +135,6 @@ def train_pytorch(
 
     try:
         from core.trainer import AutoTrainer
-        from utils.config import Config
         from utils.callbacks import DBProgressCallback
 
         os.makedirs(output_dir, exist_ok=True)
@@ -105,15 +142,7 @@ def train_pytorch(
         dataset_name = model_config.get("dataset_name", dataset_config.get("dataset_path", "MNIST"))
         task_type    = model_config.get("task_type", dataset_config.get("task_type", "classification"))
         ds_info = _safe_dataset_info(dataset_name, task_type, dataset_config)
-
-        config = Config(
-            max_epochs=hyperparams.get("epochs", 50),
-            learning_rate=hyperparams.get("lr", 0.001),
-            batch_size=hyperparams.get("batch_size", 32),
-            output_dir=output_dir,
-            optimize_hyperparams=hyperparams.get("optimize_hyperparams", False),
-            early_stopping_patience=hyperparams.get("patience", 10) if hyperparams.get("early_stopping") else 0,
-        )
+        config  = _build_config(ds_info, model_config, hyperparams, output_dir)
 
         trainer = AutoTrainer(config=config)
         trainer.callback_manager.add_callback(DBProgressCallback(job_id))
@@ -152,13 +181,9 @@ def train_tensorflow(
         dataset_name = model_config.get("dataset_name", dataset_config.get("dataset_path", "MNIST"))
         task_type    = model_config.get("task_type", dataset_config.get("task_type", "classification"))
         ds_info = _safe_dataset_info(dataset_name, task_type, dataset_config)
+        config  = _build_config(ds_info, model_config, hyperparams, output_dir)
 
-        trainer = TensorFlowTrainer(
-            epochs=hyperparams.get("epochs", 50),
-            batch_size=hyperparams.get("batch_size", 32),
-            learning_rate=hyperparams.get("lr", 0.001),
-            output_dir=output_dir,
-        )
+        trainer = TensorFlowTrainer(config=config)
         if hasattr(trainer, 'callback_manager'):
             trainer.callback_manager.add_callback(DBProgressCallback(job_id))
         results = trainer.train(ds_info, model_config=model_config)
@@ -195,8 +220,9 @@ def train_sklearn(
         dataset_name = model_config.get("dataset_name", dataset_config.get("dataset_path", "MNIST"))
         task_type    = model_config.get("task_type", dataset_config.get("task_type", "classification"))
         ds_info = _safe_dataset_info(dataset_name, task_type, dataset_config)
+        config  = _build_config(ds_info, model_config, hyperparams, output_dir)
 
-        trainer = SklearnTrainer(output_dir=output_dir)
+        trainer = SklearnTrainer(config=config)
         results = trainer.train(ds_info, model_config=model_config, hyperparams=hyperparams)
 
         model_path = results.get("model_path", "")
