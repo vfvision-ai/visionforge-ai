@@ -515,7 +515,11 @@ def _resolve_model(model_id: str, db: Session):
         stored_class_names = job.dataset_config.get("class_names", []) or []
 
     num_classes = mv.num_classes or len(stored_class_names) or 10
-    return mv, path, str(mv.framework).lower(), mv.architecture or "resnet18", num_classes, stored_class_names, job
+
+    # mv.framework is a Framework enum — use .value to get the plain string
+    # (otherwise str() gives "Framework.tensorflow" instead of "tensorflow")
+    framework = mv.framework.value if hasattr(mv.framework, "value") else str(mv.framework).lower()
+    return mv, path, framework, mv.architecture or "resnet18", num_classes, stored_class_names, job
 
 
 def _run_one(path: str, framework: str, arch: str, num_classes: int,
