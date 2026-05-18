@@ -151,27 +151,6 @@ export default function DatasetPage() {
   )
 }
 
-
-const BUILTIN = [
-  { value: 'MNIST',         label: 'MNIST — 70k handwritten digits (28×28, grayscale)' },
-  { value: 'Fashion-MNIST', label: 'Fashion-MNIST — 70k clothing items (28×28, grayscale)' },
-  { value: 'CIFAR-10',      label: 'CIFAR-10 — 60k images, 10 classes (32×32, RGB)' },
-  { value: 'CIFAR-100',     label: 'CIFAR-100 — 60k images, 100 classes (32×32, RGB)' },
-]
-
-const TASK_TYPES = [
-  { value: 'classification', label: 'Classification' },
-  { value: 'detection',      label: 'Object Detection' },
-  { value: 'segmentation',   label: 'Segmentation' },
-]
-
-interface DatasetInfo {
-  name: string
-  task_type: string
-  source: 'builtin' | 'custom'
-}
-
-export default function DatasetPage() {
   const [mode,     setMode]     = useState<'builtin' | 'custom'>('builtin')
   const [builtin,  setBuiltin]  = useState('MNIST')
   const [taskType, setTaskType] = useState('classification')
