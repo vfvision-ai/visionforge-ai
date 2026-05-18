@@ -187,51 +187,74 @@ async def run_inference(
     Upload an image and receive the top-k class predictions from the chosen model.
 
     Supported frameworks: **pytorch**, **tensorflow**, **sklearn**.
-    The model file must exist on disk at the path stored in the ModelVersion record.
     """
-    from db.models import ModelVersion as MV
-    from db.models import TrainingJob as TJ
-
-    mv = db.query(MV).filter_by(id=model_id).first()
-    if not mv:
-        raise HTTPException(status_code=404, detail=f"Model {model_id!r} not found.")
-
-    path = mv.model_path
-    if not path or not os.path.isfile(path):
-        # Try resolving relative paths against the job's output_dir
-        if mv.job_id:
-            job = db.query(TJ).filter_by(id=mv.job_id).first()
-            if job and job.output_dir and path:
-                candidate = os.path.join(job.output_dir, os.path.basename(path))
-                if os.path.isfile(candidate):
-                    path = candidate
-        if not path or not os.path.isfile(path):
-            raise HTTPException(status_code=404, detail="Model file not found on disk.")
-
-    # Read class names from dataset_config in the parent job
-    stored_class_names: List[str] = []
-    if mv.job_id:
-        job = db.query(TJ).filter_by(id=mv.job_id).first()
-        if job and job.dataset_config:
-            stored_class_names = job.dataset_config.get("class_names", []) or []
-
-    num_classes = mv.num_classes or len(stored_class_names) or 10
+    mv, path, framework, arch, num_classes, stored_class_names = _resolve_model(model_id, db)
     top_k = max(1, min(top_k, num_classes))
-
     img_data = await file.read()
     img = _open_image(img_data)
+    return _run_one(path, framework, arch, num_classes, top_k, stored_class_names, img)
 
-    framework = str(mv.framework).lower()
-    arch = mv.architecture or "resnet18"
 
-    if framework == "pytorch":
-        return _infer_pytorch(path, img, arch, num_classes, top_k, stored_class_names)
-    elif framework == "tensorflow":
-        return _infer_tensorflow(path, img, num_classes, top_k, stored_class_names)
-    elif framework == "sklearn":
-        return _infer_sklearn(path, img, num_classes, top_k, stored_class_names)
-    else:
-        raise HTTPException(status_code=400, detail=f"Unsupported framework: {framework!r}")
+# Extensions to try when searching for a model file on disk
+_MODEL_EXTS = (".pt", ".pth", ".keras", ".h5", ".joblib", ".pkl", ".model")
+# Root search directories (inside the container)
+_SEARCH_ROOTS = [
+    "/app/experiments",
+    "/app/models",
+    "experiments",
+    "models",
+]
+
+
+def _find_model_file(stored_path: Optional[str], job) -> Optional[str]:
+    """
+    Try a cascade of path strategies to locate the model file on disk.
+    Returns the first resolved path that exists, or None.
+    """
+    candidates: List[str] = []
+
+    # 1. Stored path as-is
+    if stored_path:
+        candidates.append(stored_path)
+        # 2. Strip leading '/app' in case we're running outside Docker
+        stripped = stored_path.lstrip("/")
+        candidates.append(stripped)
+        candidates.append(os.path.join("/app", stripped))
+        # 3. Basename in job output_dir
+        if job and job.output_dir:
+            candidates.append(os.path.join(job.output_dir, os.path.basename(stored_path)))
+
+    # 4. Basename in every search root (shallow)
+    basename = os.path.basename(stored_path) if stored_path else ""
+    if basename:
+        for root in _SEARCH_ROOTS:
+            candidates.append(os.path.join(root, basename))
+
+    # 5. job output_dir itself — any model file
+    if job and job.output_dir and os.path.isdir(job.output_dir):
+        for fname in sorted(os.listdir(job.output_dir)):
+            if any(fname.endswith(ext) for ext in _MODEL_EXTS):
+                candidates.append(os.path.join(job.output_dir, fname))
+
+    # 6. Recursive search in roots (expensive — only if nothing found yet)
+    matched = next((c for c in candidates if c and os.path.isfile(c)), None)
+    if matched:
+        return matched
+
+    if basename:
+        for root in _SEARCH_ROOTS:
+            if not os.path.isdir(root):
+                continue
+            for dirpath, _, files in os.walk(root):
+                if basename in files:
+                    return os.path.join(dirpath, basename)
+                # Also try same base with different extension
+                base_no_ext = os.path.splitext(basename)[0]
+                for f in files:
+                    if os.path.splitext(f)[0] == base_no_ext and any(f.endswith(e) for e in _MODEL_EXTS):
+                        return os.path.join(dirpath, f)
+
+    return None
 
 
 def _resolve_model(model_id: str, db: Session):
@@ -242,23 +265,26 @@ def _resolve_model(model_id: str, db: Session):
     if not mv:
         raise HTTPException(status_code=404, detail=f"Model {model_id!r} not found.")
 
-    path = mv.model_path
-    if not path or not os.path.isfile(path):
-        if mv.job_id:
-            job = db.query(TJ).filter_by(id=mv.job_id).first()
-            if job and job.output_dir and path:
-                candidate = os.path.join(job.output_dir, os.path.basename(path))
-                if os.path.isfile(candidate):
-                    path = candidate
-        if not path or not os.path.isfile(path):
-            raise HTTPException(status_code=404, detail="Model file not found on disk.")
+    job = db.query(TJ).filter_by(id=mv.job_id).first() if mv.job_id else None
+
+    path = _find_model_file(mv.model_path, job)
+    if not path:
+        searched = [mv.model_path or "(empty)"] + [
+            os.path.join(r, os.path.basename(mv.model_path or ""))
+            for r in _SEARCH_ROOTS if mv.model_path
+        ]
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Model file not found on disk. Stored path: {mv.model_path!r}. "
+                f"Also searched: {searched}. "
+                "If you just completed training, try the 'Repair Models' button on the Models page."
+            ),
+        )
 
     stored_class_names: List[str] = []
-    if mv.job_id:
-        from db.models import TrainingJob as TJ  # noqa: F811
-        job = db.query(TJ).filter_by(id=mv.job_id).first()
-        if job and job.dataset_config:
-            stored_class_names = job.dataset_config.get("class_names", []) or []
+    if job and job.dataset_config:
+        stored_class_names = job.dataset_config.get("class_names", []) or []
 
     num_classes = mv.num_classes or len(stored_class_names) or 10
     return mv, path, str(mv.framework).lower(), mv.architecture or "resnet18", num_classes, stored_class_names

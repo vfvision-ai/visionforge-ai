@@ -658,8 +658,26 @@ class AutoTrainer:
         
         # Use intelligent model path if available
         model_save_path = getattr(self, 'intelligent_model_path', self.config.output_dir / 'best_model.pth')
-        
-        self.logger.info(f"💾 Model saved to: {model_save_path}")
+
+        # ── Always save the model now so the checkpoint file is guaranteed ──────
+        # The ModelCheckpoint callback saves only when self.model_to_save is set via
+        # set_model(), but the trainer never calls that method.  We save explicitly
+        # here as a safety net: full checkpoint dict so inference can reconstruct
+        # the architecture without needing the original config.
+        try:
+            import torch as _torch
+            model_save_path.parent.mkdir(parents=True, exist_ok=True)
+            _torch.save({
+                "model_state_dict": self.model.state_dict(),
+                "architecture":     getattr(self.config.model_config, 'architecture', 'unknown'),
+                "num_classes":       getattr(self.config.dataset_info, 'num_classes', 0),
+                "task_type":         getattr(self.config.dataset_info, 'task_type', 'classification'),
+                "best_accuracy":     self.best_metric,
+            }, str(model_save_path))
+            self.logger.info(f"💾 Model saved to: {model_save_path}")
+        except Exception as _save_exc:
+            self.logger.warning(f"⚠️ Could not save model checkpoint: {_save_exc}")
+
         if hasattr(self, 'model_base_name'):
             self.logger.info(f"📝 Model base name: {self.model_base_name}")
         self.logger.info("=" * 60)
