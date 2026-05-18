@@ -67,6 +67,30 @@ export function downloadResultsJSON(jobId: string) {
   window.open(`/api/v1/training/${jobId}/results.json`, '_blank')
 }
 
+export async function generateTestSamples(jobId: string, numSamples: number, fmt: string): Promise<void> {
+  const params = new URLSearchParams({ num_samples: String(numSamples), image_format: fmt })
+  const hdrs: Record<string, string> = {}
+  if (API_KEY) hdrs['X-API-Key'] = API_KEY
+  const res = await fetch(`/api/v1/training/${jobId}/test-samples?${params}`, {
+    method: 'POST',
+    headers: hdrs,
+    cache: 'no-store',
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText)
+    throw new Error(`${res.status}: ${text}`)
+  }
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `test_samples_${jobId.slice(0, 8)}.zip`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 // ── Models ────────────────────────────────────────────────────────────────────
 export const getModels = (skip = 0, limit = 100) =>
   request<{ models: ModelVersion[]; total: number }>(`/models/?skip=${skip}&limit=${limit}`)

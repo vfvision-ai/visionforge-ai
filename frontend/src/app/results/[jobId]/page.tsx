@@ -1,14 +1,14 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, XCircle, Loader2, Download, FileText, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, XCircle, Loader2, Download, FileText, CheckCircle2, Package } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import Card from '@/components/Card'
-import { getJob, cancelJob, downloadModelFile, downloadHistoryCSV, downloadResultsJSON } from '@/lib/api'
+import { getJob, cancelJob, downloadModelFile, downloadHistoryCSV, downloadResultsJSON, generateTestSamples } from '@/lib/api'
 import { formatDate, formatDuration, pct } from '@/lib/utils'
 import type { TrainingJob } from '@/types'
 
@@ -45,6 +45,10 @@ export default function JobDetailPage() {
   const [job,     setJob]     = useState<TrainingJob | null>(null)
   const [error,   setError]   = useState('')
   const [cancelling, setCancelling] = useState(false)
+  const [sampleCount,  setSampleCount]  = useState(50)
+  const [sampleFmt,    setSampleFmt]    = useState<'png' | 'jpg'>('png')
+  const [genSamples,   setGenSamples]   = useState(false)
+  const [sampleError,  setSampleError]  = useState('')
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   async function load() {
@@ -274,6 +278,77 @@ export default function JobDetailPage() {
           <pre className="text-xs text-slate-400 font-mono bg-surface-900 rounded-lg p-4 overflow-x-auto">
             {JSON.stringify(job.results, null, 2)}
           </pre>
+        </Card>
+      )}
+
+      {/* Test Samples for Evaluation */}
+      {job.status === 'completed' && (
+        <Card>
+          <div className="flex items-center gap-2 mb-4">
+            <Package size={15} className="text-brand-400" />
+            <h3 className="text-sm font-semibold text-slate-300">Test Samples for Evaluation</h3>
+          </div>
+          <p className="text-xs text-slate-500 mb-4">
+            Extract labelled images from the training dataset. Downloads a <code className="text-slate-300">.zip</code> with
+            images and a <code className="text-slate-300">labels.csv</code> manifest — ready for inference testing.
+          </p>
+          <div className="flex flex-wrap items-end gap-4">
+            {/* Count */}
+            <div>
+              <label className="block text-xs text-slate-400 mb-1.5">
+                Number of samples: <span className="text-brand-400 font-mono">{sampleCount}</span>
+              </label>
+              <input
+                title="Number of test samples"
+                type="range" min={1} max={500} step={1}
+                value={sampleCount}
+                onChange={e => setSampleCount(Number(e.target.value))}
+                className="w-44 accent-brand-500"
+              />
+              <div className="flex justify-between text-xs text-slate-600 mt-0.5">
+                <span>1</span><span>500</span>
+              </div>
+            </div>
+            {/* Format */}
+            <div>
+              <p className="text-xs text-slate-400 mb-1.5">Image format</p>
+              <div className="flex gap-1">
+                {(['png', 'jpg'] as const).map(f => (
+                  <button key={f} onClick={() => setSampleFmt(f)}
+                    className={`px-3 py-1.5 rounded-md text-xs border transition-colors ${
+                      sampleFmt === f
+                        ? 'border-brand-500 bg-brand-500/10 text-white'
+                        : 'border-surface-600 text-slate-400 hover:text-white'
+                    }`}>
+                    .{f.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Button */}
+            <Button
+              icon={genSamples ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+              loading={genSamples}
+              onClick={async () => {
+                setSampleError('')
+                setGenSamples(true)
+                try {
+                  await generateTestSamples(jobId, sampleCount, sampleFmt)
+                } catch (e: unknown) {
+                  setSampleError(e instanceof Error ? e.message : 'Failed to generate samples')
+                } finally {
+                  setGenSamples(false)
+                }
+              }}
+            >
+              {genSamples ? 'Generating…' : `Generate & Download (${sampleCount} samples)`}
+            </Button>
+          </div>
+          {sampleError && (
+            <div className="mt-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400">
+              {sampleError}
+            </div>
+          )}
         </Card>
       )}
     </div>

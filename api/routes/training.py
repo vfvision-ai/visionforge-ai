@@ -230,6 +230,115 @@ def download_history_csv(
     )
 
 
+@router.post("/{job_id}/test-samples", summary="Generate test samples and download as ZIP")
+def generate_test_samples(
+    job_id: str,
+    num_samples: int = Query(default=50, ge=1, le=500),
+    image_format: str = Query(default="png"),
+    db: Session = Depends(get_db),
+):
+    """
+    Extract `num_samples` labelled images from the job's dataset and return them
+    as a downloadable ZIP containing the images and a labels.csv manifest.
+    """
+    import io as _io
+    import zipfile
+    import tempfile
+    import types
+
+    job = crud.get_job(db, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id!r} not found.")
+
+    if job.status not in (JobStatus.COMPLETED, "completed"):
+        raise HTTPException(
+            status_code=400,
+            detail="Job must be completed before generating test samples.",
+        )
+
+    cfg = job.dataset_config or {}
+    source = cfg.get("source", "")
+    dataset_name = job.dataset_name or ""
+    fmt = image_format.lower() if image_format.lower() in ("png", "jpg") else "png"
+
+    BUILTIN_NAMES = {
+        "MNIST", "Fashion-MNIST", "CIFAR-10", "CIFAR-100",
+        "VOC2012", "Oxford-IIIT-Pet", "COCO-Detection", "VOC2012-Det",
+    }
+
+    info = types.SimpleNamespace(
+        task_type=job.task_type,
+        num_classes=0,
+        num_samples=0,
+        class_names=_class_names_for(dataset_name),
+        dataset_path=None,
+        is_hf_dataset=False,
+        hf_dataset_name=None,
+        hf_subset=None,
+        is_builtin=False,
+        builtin_dataset_name=None,
+        builtin_tf_name=None,
+    )
+
+    if source in ("pytorch", "tensorflow") or dataset_name in BUILTIN_NAMES:
+        info.is_builtin = True
+        # Normalise to the key _save_builtin_test_samples recognises
+        norm = dataset_name.lower().replace("-", "").replace(" ", "").replace("_", "")
+        info.builtin_dataset_name = norm
+        info.builtin_tf_name = norm
+    elif source == "huggingface":
+        info.is_hf_dataset = True
+        info.hf_dataset_name = dataset_name
+        info.hf_subset = cfg.get("hf_subset") or None
+    else:
+        info.dataset_path = dataset_name
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        try:
+            from ui.shared import save_test_samples_for_evaluation  # noqa: PLC0415
+            save_test_samples_for_evaluation(info, tmpdir, num_samples, fmt)
+        except Exception as exc:
+            logger.error("Test sample generation failed: %s", exc)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to generate samples: {exc}",
+            )
+
+        test_dir = os.path.join(tmpdir, "test_samples")
+        if not os.path.isdir(test_dir):
+            raise HTTPException(status_code=500, detail="Sample generation produced no output.")
+
+        buf = _io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for fname in sorted(os.listdir(test_dir)):
+                zf.write(os.path.join(test_dir, fname), fname)
+        buf.seek(0)
+        zip_bytes = buf.getvalue()
+
+    return StreamingResponse(
+        iter([zip_bytes]),
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=test_samples_{job_id[:8]}.zip"},
+    )
+
+
+def _class_names_for(dataset_name: str) -> list:
+    """Return well-known class names for common datasets."""
+    _MAP: dict = {
+        "MNIST": [str(i) for i in range(10)],
+        "Fashion-MNIST": [
+            "T-shirt/top", "Trouser", "Pullover", "Dress", "Coat",
+            "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot",
+        ],
+        "CIFAR-10": [
+            "airplane", "automobile", "bird", "cat", "deer",
+            "dog", "frog", "horse", "ship", "truck",
+        ],
+        "CIFAR-100": [f"class_{i}" for i in range(100)],
+    }
+    return _MAP.get(dataset_name, [])
+
+
 @router.get("/{job_id}/results.json", summary="Download full results as JSON")
 def download_results_json(
     job_id: str,
