@@ -83,6 +83,41 @@ docker compose logs -f api worker
 docker compose ps`}
         </pre>
       </Card>
+
+      <Card>
+        <h2 className="text-sm font-semibold text-slate-300 mb-3">Model Export</h2>
+        <p className="text-sm text-slate-400 mb-4">
+          PyTorch models can be exported to <strong className="text-white">ONNX</strong> or{' '}
+          <strong className="text-white">TorchScript</strong> format for deployment.
+          Use the <span className="text-brand-400 font-mono text-xs">FileDown</span> icon on any PyTorch
+          model in the <a href="/models" className="text-brand-400 hover:underline">Models</a> page.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {[
+            {
+              title: 'ONNX',
+              desc: 'Cross-platform format supported by ONNX Runtime, TensorRT, OpenVINO, and most serving frameworks.',
+              cmd: 'pip install onnx onnxruntime',
+            },
+            {
+              title: 'TorchScript',
+              desc: 'PyTorch-native serialisation. Run without Python using the LibTorch C++ API.',
+              cmd: 'pip install torch torchvision',
+            },
+          ].map(({ title, desc, cmd }) => (
+            <div key={title} className="p-4 bg-surface-900 rounded-lg border border-surface-700">
+              <p className="text-sm font-semibold text-white mb-1">{title}</p>
+              <p className="text-xs text-slate-400 mb-3">{desc}</p>
+              <code className="text-xs text-brand-400 font-mono">{cmd}</code>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-slate-600 mt-4">
+          Backend endpoint: <code className="text-slate-500 font-mono">POST /api/v1/models/&#123;id&#125;/export</code> — accepts{' '}
+          <code className="text-slate-500 font-mono">format</code> (<code className="text-slate-500">onnx</code> |{' '}
+          <code className="text-slate-500">torchscript</code>) and <code className="text-slate-500 font-mono">input_size</code>.
+        </p>
+      </Card>
     </div>
   )
 }
