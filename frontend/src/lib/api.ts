@@ -63,6 +63,9 @@ export function downloadModelFile(jobId: string) {
 export function downloadHistoryCSV(jobId: string) {
   window.open(`/api/v1/training/${jobId}/history.csv`, '_blank')
 }
+export function downloadResultsJSON(jobId: string) {
+  window.open(`/api/v1/training/${jobId}/results.json`, '_blank')
+}
 
 // ── Models ────────────────────────────────────────────────────────────────────
 export const getModels = (skip = 0, limit = 100) =>

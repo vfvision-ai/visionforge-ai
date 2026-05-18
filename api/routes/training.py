@@ -185,7 +185,27 @@ def download_history_csv(
     job = crud.get_job(db, job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {job_id!r} not found.")
-    history = job.training_history or []
+
+    raw = job.training_history
+
+    # Normalise dict-keyed history {'train_accuracy': [...]} → list of per-epoch dicts
+    if isinstance(raw, dict):
+        metric_lists = {k: v for k, v in raw.items() if isinstance(v, list)}
+        if metric_lists:
+            n = max(len(v) for v in metric_lists.values())
+            history = [
+                {"epoch": i + 1, **{k: v[i] for k, v in metric_lists.items() if i < len(v)}}
+                for i in range(n)
+            ]
+        else:
+            history = []
+    else:
+        history = raw or []
+
+    # If no per-epoch list, fall back to flattening job.results
+    if not history and job.results:
+        history = [{"epoch": 1, **{k: v for k, v in job.results.items() if not isinstance(v, (dict, list))}}]
+
     if not history:
         raise HTTPException(status_code=404, detail="No training history available.")
 
@@ -207,6 +227,36 @@ def download_history_csv(
         iter([buf.getvalue()]),
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=history_{job_id[:8]}.csv"},
+    )
+
+
+@router.get("/{job_id}/results.json", summary="Download full results as JSON")
+def download_results_json(
+    job_id: str,
+    db: Session = Depends(get_db),
+):
+    import json as _json
+    job = crud.get_job(db, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id!r} not found.")
+    payload = {
+        "job_id":           job.id,
+        "dataset_name":     job.dataset_name,
+        "architecture":     job.architecture,
+        "framework":        job.framework,
+        "task_type":        job.task_type,
+        "hyperparams":      job.hyperparams,
+        "status":           job.status,
+        "results":          job.results,
+        "training_history": job.training_history,
+        "created_at":       job.created_at.isoformat() if job.created_at else None,
+        "started_at":       job.started_at.isoformat()  if job.started_at  else None,
+        "completed_at":     job.completed_at.isoformat() if job.completed_at else None,
+    }
+    return StreamingResponse(
+        iter([_json.dumps(payload, indent=2)]),
+        media_type="application/json",
+        headers={"Content-Disposition": f"attachment; filename=results_{job_id[:8]}.json"},
     )
 
 

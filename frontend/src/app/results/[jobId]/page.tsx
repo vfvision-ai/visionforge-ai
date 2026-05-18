@@ -8,7 +8,7 @@ import {
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import Card from '@/components/Card'
-import { getJob, cancelJob, downloadModelFile, downloadHistoryCSV } from '@/lib/api'
+import { getJob, cancelJob, downloadModelFile, downloadHistoryCSV, downloadResultsJSON } from '@/lib/api'
 import { formatDate, formatDuration, pct } from '@/lib/utils'
 import type { TrainingJob } from '@/types'
 
@@ -150,17 +150,18 @@ export default function JobDetailPage() {
               {bestMetric != null ? `Best ${metricLabel}: ${pct(bestMetric)}` : 'Model saved successfully'}
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             {job.model_path && (
               <Button size="sm" icon={<Download size={13} />} onClick={() => downloadModelFile(jobId)}>
                 Download Model
               </Button>
             )}
-            {(job.training_history?.length ?? 0) > 0 && (
-              <Button variant="secondary" size="sm" icon={<FileText size={13} />} onClick={() => downloadHistoryCSV(jobId)}>
-                Export CSV
-              </Button>
-            )}
+            <Button variant="secondary" size="sm" icon={<FileText size={13} />} onClick={() => downloadHistoryCSV(jobId)}>
+              Export CSV
+            </Button>
+            <Button variant="secondary" size="sm" icon={<FileText size={13} />} onClick={() => downloadResultsJSON(jobId)}>
+              Results JSON
+            </Button>
           </div>
         </div>
       )}
