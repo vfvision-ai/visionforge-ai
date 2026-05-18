@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+import csv
 import io
 import os
-from typing import List, Optional
+import zipfile
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_db
 
 router = APIRouter()
+
+# Image extensions we'll try to infer inside a ZIP
+_IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".gif", ".tiff"}
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
@@ -226,3 +232,161 @@ async def run_inference(
         return _infer_sklearn(path, img, num_classes, top_k, stored_class_names)
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported framework: {framework!r}")
+
+
+def _resolve_model(model_id: str, db: Session):
+    """Return (mv, path, framework, arch, num_classes, class_names) or raise 404."""
+    from db.models import ModelVersion as MV, TrainingJob as TJ
+
+    mv = db.query(MV).filter_by(id=model_id).first()
+    if not mv:
+        raise HTTPException(status_code=404, detail=f"Model {model_id!r} not found.")
+
+    path = mv.model_path
+    if not path or not os.path.isfile(path):
+        if mv.job_id:
+            job = db.query(TJ).filter_by(id=mv.job_id).first()
+            if job and job.output_dir and path:
+                candidate = os.path.join(job.output_dir, os.path.basename(path))
+                if os.path.isfile(candidate):
+                    path = candidate
+        if not path or not os.path.isfile(path):
+            raise HTTPException(status_code=404, detail="Model file not found on disk.")
+
+    stored_class_names: List[str] = []
+    if mv.job_id:
+        from db.models import TrainingJob as TJ  # noqa: F811
+        job = db.query(TJ).filter_by(id=mv.job_id).first()
+        if job and job.dataset_config:
+            stored_class_names = job.dataset_config.get("class_names", []) or []
+
+    num_classes = mv.num_classes or len(stored_class_names) or 10
+    return mv, path, str(mv.framework).lower(), mv.architecture or "resnet18", num_classes, stored_class_names
+
+
+def _run_one(path: str, framework: str, arch: str, num_classes: int, top_k: int, class_names: List[str], img) -> Dict[str, Any]:
+    if framework == "pytorch":
+        return _infer_pytorch(path, img, arch, num_classes, top_k, class_names)
+    elif framework == "tensorflow":
+        return _infer_tensorflow(path, img, num_classes, top_k, class_names)
+    elif framework == "sklearn":
+        return _infer_sklearn(path, img, num_classes, top_k, class_names)
+    raise HTTPException(status_code=400, detail=f"Unsupported framework: {framework!r}")
+
+
+@router.post(
+    "/zip",
+    summary="Run batch inference on a ZIP of images (test-samples format)",
+    response_class=StreamingResponse,
+)
+async def run_inference_zip(
+    file: UploadFile = File(..., description=(
+        "ZIP file matching the test-samples download format: "
+        "images + optional labels.csv with columns image_name,label,label_name"
+    )),
+    model_id: str = Form(..., description="ModelVersion ID"),
+    top_k: int    = Form(5,  description="Top-K predictions per image"),
+    db: Session   = Depends(get_db),
+):
+    """
+    Upload the same ZIP that **Download Test Samples** produces and receive a CSV
+    with columns:
+
+    ``image_name, true_label, true_label_name, predicted_class, confidence_%, correct``
+
+    If ``labels.csv`` is absent from the ZIP the ``true_label`` / ``true_label_name``
+    columns will be empty and ``correct`` will be blank.
+    """
+    mv, path, framework, arch, num_classes, class_names = _resolve_model(model_id, db)
+    effective_top_k = max(1, min(top_k, num_classes))
+
+    zip_data = await file.read()
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(zip_data))
+    except zipfile.BadZipFile as exc:
+        raise HTTPException(status_code=400, detail="Uploaded file is not a valid ZIP archive.") from exc
+
+    names_in_zip = zf.namelist()
+
+    # Parse labels.csv if present (any depth)
+    labels_map: Dict[str, Dict[str, str]] = {}
+    csv_entry = next((n for n in names_in_zip if os.path.basename(n) == "labels.csv"), None)
+    if csv_entry:
+        raw = zf.read(csv_entry).decode("utf-8", errors="replace")
+        reader = csv.DictReader(io.StringIO(raw))
+        for row in reader:
+            img_name = row.get("image_name", "").strip()
+            if img_name:
+                labels_map[img_name] = {
+                    "label":      row.get("label", ""),
+                    "label_name": row.get("label_name", ""),
+                }
+
+    # Collect image entries
+    img_entries = [
+        n for n in names_in_zip
+        if os.path.splitext(n.lower())[1] in _IMG_EXTS and not os.path.basename(n).startswith(".")
+    ]
+
+    if not img_entries:
+        raise HTTPException(status_code=400, detail="ZIP contains no supported image files (jpg/png/bmp/webp).")
+
+    # Run inference per image, build result rows
+    rows: List[List[str]] = []
+    for entry in img_entries:
+        base = os.path.basename(entry)
+        img_data = zf.read(entry)
+        try:
+            from PIL import Image as PILImage
+            img = PILImage.open(io.BytesIO(img_data)).convert("RGB")
+        except Exception:
+            rows.append([base, "", "", "ERROR: cannot decode image", "", ""])
+            continue
+
+        try:
+            result = _run_one(path, framework, arch, num_classes, effective_top_k, class_names, img)
+        except HTTPException as exc:
+            rows.append([base, "", "", f"ERROR: {exc.detail}", "", ""])
+            continue
+
+        preds: List[Dict] = result.get("predictions") or []
+        top = preds[0] if preds else {}
+        pred_class = top.get("class_name", result.get("top_class", ""))
+        confidence = top.get("confidence", result.get("top_confidence", 0.0))
+        conf_pct   = f"{float(confidence) * 100:.1f}"
+
+        meta = labels_map.get(base, {})
+        true_label      = meta.get("label", "")
+        true_label_name = meta.get("label_name", "")
+        correct = ""
+        if true_label_name:
+            correct = "1" if str(true_label_name).strip().lower() == str(pred_class).strip().lower() else "0"
+        elif true_label:
+            # compare numeric label vs predicted class index
+            c_idx = top.get("class_index")
+            correct = "1" if c_idx is not None and str(c_idx) == str(true_label).strip() else "0"
+
+        rows.append([base, true_label, true_label_name, str(pred_class), conf_pct, correct])
+
+    # Build output CSV in-memory
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(["image_name", "true_label", "true_label_name", "predicted_class", "confidence_%", "correct"])
+    writer.writerows(rows)
+    csv_bytes = out.getvalue().encode("utf-8")
+
+    # Compute summary stats
+    labelled = [r for r in rows if r[5] in ("0", "1")]
+    correct_n = sum(1 for r in labelled if r[5] == "1")
+    acc_str = f"{correct_n / len(labelled) * 100:.1f}%" if labelled else "n/a"
+
+    return StreamingResponse(
+        io.BytesIO(csv_bytes),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": "attachment; filename=inference_results.csv",
+            "X-Total-Images":  str(len(rows)),
+            "X-Correct":       str(correct_n),
+            "X-Accuracy":      acc_str,
+        },
+    )

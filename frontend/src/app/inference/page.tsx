@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
-import { Upload, Zap, AlertCircle, BarChart2, Download, Layers } from 'lucide-react'
+import { Upload, Zap, AlertCircle, BarChart2, Download, Layers, FileArchive } from 'lucide-react'
 import Card from '@/components/Card'
 import Button from '@/components/Button'
 import { Select } from '@/components/FormControls'
@@ -16,6 +16,7 @@ interface InferenceResult {
   [key: string]: unknown
 }
 interface BatchEntry { file: File; preview: string; result: InferenceResult | null; error?: string }
+type Mode = 'single' | 'batch' | 'zip'
 
 export default function InferencePage() {
   const [models,   setModels]   = useState<ModelVersion[]>([])
@@ -33,6 +34,12 @@ export default function InferencePage() {
   const [batchRunning, setBatchRunning] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const batchRef = useRef<HTMLInputElement>(null)
+  const zipRef   = useRef<HTMLInputElement>(null)
+  const [mode, setMode]             = useState<Mode>('single')
+  const [zipFile,    setZipFile]    = useState<File | null>(null)
+  const [zipRunning, setZipRunning] = useState(false)
+  const [zipResult,  setZipResult]  = useState<{ csvUrl: string; total: number; correct: number; accuracy: string } | null>(null)
+  const [zipError,   setZipError]   = useState('')
 
   useEffect(() => {
     getModels().then(data => {
@@ -95,6 +102,40 @@ export default function InferencePage() {
     setBatchRunning(false)
   }
 
+  async function runZip() {
+    if (!zipFile || !modelId) return
+    setZipRunning(true); setZipError(''); setZipResult(null)
+    try {
+      const form = new FormData()
+      form.append('file', zipFile)
+      form.append('model_id', modelId)
+      form.append('top_k', String(topK))
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY ?? ''
+      const headers: Record<string, string> = {}
+      if (apiKey) headers['X-API-Key'] = apiKey
+      const res = await fetch('/api/v1/inference/zip', { method: 'POST', body: form, headers })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error((j as { detail?: string }).detail || `HTTP ${res.status}`)
+      }
+      const blob = await res.blob()
+      const csvUrl = URL.createObjectURL(blob)
+      const total    = parseInt(res.headers.get('X-Total-Images') ?? '0', 10)
+      const correct  = parseInt(res.headers.get('X-Correct')      ?? '0', 10)
+      const accuracy = res.headers.get('X-Accuracy') ?? 'n/a'
+      setZipResult({ csvUrl, total, correct, accuracy })
+    } catch (e: unknown) { setZipError(e instanceof Error ? e.message : 'ZIP inference failed') }
+    finally { setZipRunning(false) }
+  }
+
+  function downloadZipCSV() {
+    if (!zipResult) return
+    const a = document.createElement('a')
+    a.href = zipResult.csvUrl
+    a.download = `inference_results_${Date.now()}.csv`
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+  }
+
   function exportBatchCSV() {
     const headers = ['filename', 'top_class', 'confidence_%']
     const rows = batchEntries.map(e => {
@@ -146,10 +187,14 @@ export default function InferencePage() {
 
       {/* Mode toggle */}
       <div className="flex gap-1 p-1 bg-surface-900 rounded-lg w-fit">
-        {([['single', 'Single Image', Zap], ['batch', 'Batch Mode', Layers]] as const).map(([mode, label, Icon]) => (
-          <button key={mode} onClick={() => { setBatchMode(mode === 'batch'); setResult(null); setError('') }}
+        {([
+          ['single', 'Single Image', Zap],
+          ['batch',  'Batch Mode',   Layers],
+          ['zip',    'ZIP Upload',   FileArchive],
+        ] as [Mode, string, React.ElementType][]).map(([m, label, Icon]) => (
+          <button key={m} onClick={() => { setMode(m); setResult(null); setError(''); setZipResult(null); setZipError('') }}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-              (mode === 'batch') === batchMode ? 'bg-brand-600 text-white' : 'text-slate-400 hover:text-white'
+              mode === m ? 'bg-brand-600 text-white' : 'text-slate-400 hover:text-white'
             }`}>
             <Icon size={12} /> {label}
           </button>
@@ -193,7 +238,7 @@ export default function InferencePage() {
       </Card>
 
       {/* Upload — single mode only */}
-      {!batchMode && (
+      {mode === 'single' && (
       <Card>
         <h2 className="text-sm font-semibold text-slate-300 mb-4">Upload Image</h2>
         <div
@@ -232,7 +277,7 @@ export default function InferencePage() {
       )}
 
       {/* Batch Mode */}
-      {batchMode && (
+      {mode === 'batch' && (
         <>
           <Card>
             <h2 className="text-sm font-semibold text-slate-300 mb-4">Batch Upload</h2>
@@ -302,8 +347,74 @@ export default function InferencePage() {
         </>
       )}
 
+      {/* ZIP Mode */}
+      {mode === 'zip' && (
+        <Card>
+          <h2 className="text-sm font-semibold text-slate-300 mb-1 flex items-center gap-2">
+            <FileArchive size={15} className="text-brand-400" /> ZIP Batch Inference
+          </h2>
+          <p className="text-xs text-slate-500 mb-4">
+            Upload the same ZIP file produced by <strong className="text-slate-300">Download Test Samples</strong> on the
+            Results page. The ZIP must contain images (jpg/png) and optionally a
+            <code className="text-brand-400 mx-1 font-mono text-xs">labels.csv</code>
+            with columns <code className="text-slate-400 font-mono text-xs">image_name, label, label_name</code>.
+            You’ll receive a CSV with predictions and accuracy summary.
+          </p>
+          <div
+            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
+              zipFile ? 'border-brand-500/50 bg-brand-500/5' : 'border-surface-600 hover:border-surface-500'
+            }`}
+            onClick={() => zipRef.current?.click()}
+            onDragOver={e => e.preventDefault()}
+            onDrop={e => {
+              e.preventDefault()
+              const f = e.dataTransfer.files[0]
+              if (f?.name.endsWith('.zip')) { setZipFile(f); setZipResult(null); setZipError('') }
+              else setZipError('Please drop a .zip file')
+            }}
+          >
+            {zipFile ? (
+              <div className="flex flex-col items-center gap-2">
+                <FileArchive size={32} className="text-brand-400" />
+                <p className="text-sm text-white font-medium">{zipFile.name}</p>
+                <p className="text-xs text-slate-500">{(zipFile.size / 1024).toFixed(0)} KB — click to change</p>
+              </div>
+            ) : (
+              <>
+                <FileArchive size={32} className="mx-auto text-slate-600 mb-3" />
+                <p className="text-sm text-slate-400">Drag &amp; drop a .zip file, or click to browse</p>
+                <p className="text-xs text-slate-600 mt-1">Same format as test-samples download</p>
+              </>
+            )}
+          </div>
+          <input ref={zipRef} type="file" title="Select ZIP file" accept=".zip,application/zip" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) { setZipFile(f); setZipResult(null); setZipError('') } }} />
+          {zipError && <p className="mt-3 text-sm text-red-400">{zipError}</p>}
+          <Button className="mt-4 w-full justify-center" size="lg" loading={zipRunning}
+            disabled={!zipFile || !modelId} icon={<Zap size={15} />} onClick={runZip}>
+            Run ZIP Inference
+          </Button>
+
+          {zipResult && (
+            <div className="mt-5 p-4 rounded-xl bg-green-500/10 border border-green-500/20 space-y-3">
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div><p className="text-xs text-slate-500">Images</p><p className="text-lg font-bold text-white">{zipResult.total}</p></div>
+                <div><p className="text-xs text-slate-500">Correct</p><p className="text-lg font-bold text-green-400">{zipResult.correct}</p></div>
+                <div><p className="text-xs text-slate-500">Accuracy</p><p className="text-lg font-bold text-brand-400">{zipResult.accuracy}</p></div>
+              </div>
+              {zipResult.accuracy === 'n/a' && (
+                <p className="text-xs text-slate-500 text-center">No labels.csv found — accuracy unavailable</p>
+              )}
+              <Button variant="secondary" className="w-full justify-center" icon={<Download size={14} />} onClick={downloadZipCSV}>
+                Download Results CSV
+              </Button>
+            </div>
+          )}
+        </Card>
+      )}
+
       {/* Single-mode Results */}
-      {!batchMode && result && (
+      {mode === 'single' && result && (
         <Card>
           <h2 className="text-sm font-semibold text-slate-300 mb-4 flex items-center gap-2">
             <BarChart2 size={16} className="text-brand-400" /> Predictions
