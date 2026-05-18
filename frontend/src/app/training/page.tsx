@@ -92,7 +92,12 @@ export default function TrainingPage() {
       const cfg = sessionStorage.getItem('dataset_config')
       if (cfg) {
         const d = JSON.parse(cfg)
-        setForm(f => ({ ...f, dataset_name: d.name || f.dataset_name, task_type: d.task_type || f.task_type }))
+        setForm(f => ({
+          ...f,
+          dataset_name: d.name      || f.dataset_name,
+          task_type:    d.task_type || f.task_type,
+          framework:    d.framework || f.framework,
+        }))
       }
     } catch { /* ignore */ }
   }, [])
