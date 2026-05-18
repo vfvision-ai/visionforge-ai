@@ -146,7 +146,13 @@ def train_pytorch(
 
         trainer = AutoTrainer(config=config)
         trainer.callback_manager.add_callback(DBProgressCallback(job_id))
-        results = trainer.train(ds_info, framework="pytorch")
+        result_obj = trainer.train()  # AutoTrainer.train() takes no args
+
+        # TrainingResults is a dataclass — normalise to plain dict
+        from dataclasses import asdict
+        results = asdict(result_obj)
+        results["model_path"] = str(results.get("model_path", ""))
+        results["log_path"]   = str(results.get("log_path", ""))
 
         model_path = results.get("model_path", "")
         _mark_complete(job_id, results, model_path)
@@ -186,7 +192,13 @@ def train_tensorflow(
         trainer = TensorFlowTrainer(config=config)
         if hasattr(trainer, 'callback_manager'):
             trainer.callback_manager.add_callback(DBProgressCallback(job_id))
-        results = trainer.train(ds_info, model_config=model_config)
+
+        data_info = trainer.prepare_data(ds_info, batch_size=hyperparams.get("batch_size", 32))
+        trainer.build_model(model_config, data_info)
+        results = trainer.train(
+            epochs=hyperparams.get("epochs", 50),
+            model_save_dir=output_dir,
+        )
 
         model_path = results.get("model_path", "")
         _mark_complete(job_id, results, model_path)
@@ -223,7 +235,9 @@ def train_sklearn(
         config  = _build_config(ds_info, model_config, hyperparams, output_dir)
 
         trainer = SklearnTrainer(config=config)
-        results = trainer.train(ds_info, model_config=model_config, hyperparams=hyperparams)
+        data_info = trainer.prepare_data(ds_info)
+        trainer.build_model(model_config, data_info)
+        results = trainer.train(model_save_dir=output_dir)
 
         model_path = results.get("model_path", "")
         _mark_complete(job_id, results, model_path)
