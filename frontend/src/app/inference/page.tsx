@@ -122,7 +122,9 @@ export default function InferencePage() {
       const csvUrl = URL.createObjectURL(blob)
       const total    = parseInt(res.headers.get('X-Total-Images') ?? '0', 10)
       const correct  = parseInt(res.headers.get('X-Correct')      ?? '0', 10)
-      const accuracy = res.headers.get('X-Accuracy') ?? 'n/a'
+      // X-Accuracy is sent without '%' to avoid proxy stripping the header; add it back here
+      const accRaw   = res.headers.get('X-Accuracy')
+      const accuracy = accRaw && accRaw !== 'N/A' ? `${accRaw}%` : 'n/a'
       setZipResult({ csvUrl, total, correct, accuracy })
     } catch (e: unknown) { setZipError(e instanceof Error ? e.message : 'ZIP inference failed') }
     finally { setZipRunning(false) }

@@ -384,12 +384,17 @@ async def run_inference_zip(
         meta = labels_map.get(base, {})
         true_label      = meta.get("label", "")
         true_label_name = meta.get("label_name", "")
+        c_idx = top.get("class_index")
         correct = ""
         if true_label_name:
-            correct = "1" if str(true_label_name).strip().lower() == str(pred_class).strip().lower() else "0"
+            # Direct name comparison
+            match = str(true_label_name).strip().lower() == str(pred_class).strip().lower()
+            # Fallback: compare class index against numeric label (handles e.g. "7" vs "Class 7")
+            if not match and c_idx is not None and true_label:
+                match = str(c_idx) == str(true_label).strip()
+            correct = "1" if match else "0"
         elif true_label:
-            # compare numeric label vs predicted class index
-            c_idx = top.get("class_index")
+            # Only numeric index comparison available
             correct = "1" if c_idx is not None and str(c_idx) == str(true_label).strip() else "0"
 
         rows.append([base, true_label, true_label_name, str(pred_class), conf_pct, correct])
@@ -404,7 +409,9 @@ async def run_inference_zip(
     # Compute summary stats
     labelled = [r for r in rows if r[5] in ("0", "1")]
     correct_n = sum(1 for r in labelled if r[5] == "1")
-    acc_str = f"{correct_n / len(labelled) * 100:.1f}%" if labelled else "n/a"
+    # Do NOT include '%' in the header value — HTTP proxies (e.g. Next.js rewrites)
+    # may strip or corrupt headers containing literal '%' characters.
+    acc_str = f"{correct_n / len(labelled) * 100:.1f}" if labelled else "N/A"
 
     return StreamingResponse(
         io.BytesIO(csv_bytes),
