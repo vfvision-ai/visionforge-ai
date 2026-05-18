@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import csv
 import io
 import os
@@ -303,7 +304,6 @@ def _run_one(path: str, framework: str, arch: str, num_classes: int, top_k: int,
 @router.post(
     "/zip",
     summary="Run batch inference on a ZIP of images (test-samples format)",
-    response_class=StreamingResponse,
 )
 async def run_inference_zip(
     file: UploadFile = File(..., description=(
@@ -404,22 +404,22 @@ async def run_inference_zip(
     writer = csv.writer(out)
     writer.writerow(["image_name", "true_label", "true_label_name", "predicted_class", "confidence_%", "correct"])
     writer.writerows(rows)
-    csv_bytes = out.getvalue().encode("utf-8")
+    csv_text = out.getvalue()
 
     # Compute summary stats
     labelled = [r for r in rows if r[5] in ("0", "1")]
     correct_n = sum(1 for r in labelled if r[5] == "1")
-    # Do NOT include '%' in the header value — HTTP proxies (e.g. Next.js rewrites)
-    # may strip or corrupt headers containing literal '%' characters.
-    acc_str = f"{correct_n / len(labelled) * 100:.1f}" if labelled else "N/A"
+    acc_str = f"{correct_n / len(labelled) * 100:.1f}%" if labelled else "n/a"
 
-    return StreamingResponse(
-        io.BytesIO(csv_bytes),
-        media_type="text/csv",
-        headers={
-            "Content-Disposition": "attachment; filename=inference_results.csv",
-            "X-Total-Images":  str(len(rows)),
-            "X-Correct":       str(correct_n),
-            "X-Accuracy":      acc_str,
-        },
-    )
+    # Return JSON so the frontend receives stats as plain fields — no HTTP header
+    # stripping from proxies, no client-side CSV parsing needed.
+    # The CSV is base64-encoded so the browser can reconstruct a download link.
+    return {
+        "total":      len(rows),
+        "labelled":   len(labelled),
+        "correct":    correct_n,
+        "accuracy":   acc_str,
+        "has_labels": len(labelled) > 0,
+        "csv_b64":    base64.b64encode(csv_text.encode("utf-8")).decode("ascii"),
+        "filename":   "inference_results.csv",
+    }

@@ -119,53 +119,25 @@ export default function InferencePage() {
         throw new Error((j as { detail?: string }).detail || `HTTP ${res.status}`)
       }
 
-      // Read as text first so we can parse stats AND still offer the CSV for download
-      const csvText = await res.text()
-      const csvUrl  = URL.createObjectURL(new Blob([csvText], { type: 'text/csv' }))
-
-      // ── Client-side stats computation ─────────────────────────────────────
-      // Parses the CSV directly so accuracy is correct regardless of whether
-      // response headers are stripped by a proxy or the backend is an older
-      // build that leaves the 'correct' column empty.
-      //
-      // CSV columns: image_name, true_label, true_label_name, predicted_class, confidence_%, correct
-      const dataLines = csvText.trim().split('\n').filter(l => l.trim()).slice(1)
-      const total        = dataLines.length
-      let totalLabelled  = 0
-      let correctCount   = 0
-
-      for (const line of dataLines) {
-        const cols         = line.split(',')
-        const trueLabel      = (cols[1] ?? '').trim()
-        const trueLabelName  = (cols[2] ?? '').trim()
-        const predictedClass = (cols[3] ?? '').trim()
-        const correctCol     = (cols[5] ?? '').trim() // pre-computed by backend
-
-        if (!trueLabelName && !trueLabel) continue // no ground truth
-        totalLabelled++
-
-        // 1. Use the backend-computed column when available
-        if (correctCol === '1') { correctCount++; continue }
-        if (correctCol === '0') continue
-
-        // 2. Frontend fallback comparison (handles old backend or edge cases)
-        // 2a. Direct case-insensitive name match
-        if (trueLabelName && predictedClass &&
-            trueLabelName.toLowerCase() === predictedClass.toLowerCase()) {
-          correctCount++; continue
-        }
-        // 2b. "Class N" pattern: predicted "Class 7" vs true_label "7"
-        const classNum = predictedClass.match(/^[Cc]lass\s*(\d+)$/)
-        if (classNum && trueLabel === classNum[1]) { correctCount++; continue }
-        // 2c. Numeric string equality
-        if (trueLabel && predictedClass === trueLabel) { correctCount++ }
+      // Backend now returns JSON — stats come as plain fields, CSV as base64.
+      // No HTTP header stripping, no CSV parsing needed.
+      const data = await res.json() as {
+        total: number; labelled: number; correct: number
+        accuracy: string; has_labels: boolean
+        csv_b64: string; filename: string
       }
 
-      const hasLabels = totalLabelled > 0
-      const accuracy  = hasLabels
-        ? `${(correctCount / totalLabelled * 100).toFixed(1)}%`
-        : 'n/a'
-      setZipResult({ csvUrl, total, correct: correctCount, accuracy, hasLabels })
+      // Reconstruct a downloadable CSV blob from the base64 payload
+      const csvBytes = Uint8Array.from(atob(data.csv_b64), c => c.charCodeAt(0))
+      const csvUrl   = URL.createObjectURL(new Blob([csvBytes], { type: 'text/csv' }))
+
+      setZipResult({
+        csvUrl,
+        total:     data.total,
+        correct:   data.correct,
+        accuracy:  data.accuracy,
+        hasLabels: data.has_labels,
+      })
     } catch (e: unknown) { setZipError(e instanceof Error ? e.message : 'ZIP inference failed') }
     finally { setZipRunning(false) }
   }
