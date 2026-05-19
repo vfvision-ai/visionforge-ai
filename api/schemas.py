@@ -190,6 +190,11 @@ class UserPatch(BaseModel):
     role: Optional[str] = None  # "admin" | "user"
 
 
+class BootstrapAdminRequest(BaseModel):
+    email: str
+    secret: str
+
+
 class RefreshRequest(BaseModel):
     refresh_token: str
 
