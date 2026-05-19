@@ -88,7 +88,9 @@ export default function Sidebar() {
               <p className="text-xs text-slate-400 truncate">{user.email}</p>
             </div>
             {user.role === 'admin' && (
-              <ShieldCheck size={14} className="text-amber-400 flex-shrink-0" title="Admin" />
+              <span title="Admin">
+                <ShieldCheck size={14} className="text-amber-400 flex-shrink-0" />
+              </span>
             )}
           </div>
           <button
