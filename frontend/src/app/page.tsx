@@ -133,7 +133,7 @@ export default function DashboardPage() {
 
       {/* Admin Panel — only visible to admins */}
       {isAdmin && (
-        <Card className="border-amber-700/40" style={{ background: 'rgba(120,80,0,0.08)' }}>
+        <Card className="border-amber-700/40 bg-amber-950/10">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-amber-300 flex items-center gap-2">
               <ShieldCheck size={15} />
