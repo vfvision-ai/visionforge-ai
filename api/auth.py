@@ -1,17 +1,17 @@
 """
 JWT + bcrypt authentication utilities for VisionForge.
 
-Dependencies (add to requirements.txt):
+Dependencies:
   python-jose[cryptography]>=3.3.0
-  passlib[bcrypt]>=1.7.4
+  bcrypt>=4.0.0
 """
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from utils.settings import settings as _settings
 
@@ -22,15 +22,12 @@ ACCESS_TOKEN_EXPIRE_MINUTES: int  = _settings.JWT_ACCESS_EXPIRE_MINUTES
 REFRESH_TOKEN_EXPIRE_DAYS: int    = _settings.JWT_REFRESH_EXPIRE_DAYS
 
 # ── Password hashing ──────────────────────────────────────────────────────────
-_pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
 def hash_password(plain: str) -> str:
-    return _pwd_ctx.hash(plain)
+    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return _pwd_ctx.verify(plain, hashed)
+    return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
 # ── JWT helpers ───────────────────────────────────────────────────────────────
