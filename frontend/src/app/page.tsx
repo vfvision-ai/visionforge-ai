@@ -1,20 +1,23 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { LayoutDashboard, Cpu, Activity, ArrowRight, Database, CheckCircle2, XCircle, Loader2, Server, Package, TrendingUp } from 'lucide-react'
+import { LayoutDashboard, Cpu, Activity, ArrowRight, Database, CheckCircle2, XCircle, Loader2, Server, Package, TrendingUp, ShieldCheck, Users } from 'lucide-react'
 import Link from 'next/link'
-import { getJobs, getModels, getExperiments, getHealth, getSystemInfo } from '@/lib/api'
+import { getJobs, getModels, getExperiments, getHealth, getSystemInfo, getAdminUsers } from '@/lib/api'
 import type { TrainingJob, HealthStatus, SystemInfo } from '@/types'
 import { StatCard } from '@/components/Card'
 import Card from '@/components/Card'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import { formatDate, formatDuration } from '@/lib/utils'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface Toast { id: number; type: 'success' | 'error' | 'info'; message: string }
 
 export default function DashboardPage() {
   const router = useRouter()
+  const { user } = useAuth()
+  const isAdmin = user?.role?.toLowerCase() === 'admin'
   const [jobs,       setJobs]       = useState<TrainingJob[]>([])
   const [counts,     setCounts]     = useState({ experiments: 0, models: 0 })
   const [health,     setHealth]     = useState<HealthStatus | null>(null)
@@ -22,6 +25,7 @@ export default function DashboardPage() {
   const [sysLoading, setSysLoading] = useState(true)
   const [loading,    setLoading]    = useState(true)
   const [toasts,     setToasts]     = useState<Toast[]>([])
+  const [userCount,  setUserCount]  = useState<number | null>(null)
   const prevStatuses = useRef<Record<string, string>>({})
   const toastId      = useRef(0)
 
@@ -61,6 +65,13 @@ export default function DashboardPage() {
   // Initial load
   useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Fetch user count whenever admin status is confirmed (auth may resolve after mount)
+  useEffect(() => {
+    if (isAdmin) {
+      getAdminUsers(0, 1).then(u => setUserCount(u.total)).catch(() => {})
+    }
+  }, [isAdmin]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Auto-refresh every 5s while any job is active
   useEffect(() => {
     const active = jobs.some(j => j.status === 'running' || j.status === 'pending')
@@ -85,7 +96,16 @@ export default function DashboardPage() {
             <LayoutDashboard size={22} className="text-brand-400" />
             Dashboard
           </h1>
-          <p className="text-sm text-slate-500 mt-1">Welcome to VisionForge</p>
+          <p className="text-sm text-slate-500 mt-1">
+            Welcome back,{' '}
+            <span className="text-white">{user?.full_name ?? 'User'}</span>
+            {isAdmin && (
+              <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-900/50 text-amber-300 border border-amber-700">
+                <ShieldCheck size={10} />
+                Administrator
+              </span>
+            )}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <span className={`w-2 h-2 rounded-full ${health?.status === 'ok' ? 'bg-green-400' : 'bg-yellow-400'}`} />
@@ -110,6 +130,43 @@ export default function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {/* Admin Panel — only visible to admins */}
+      {isAdmin && (
+        <Card className="border-amber-700/40" style={{ background: 'rgba(120,80,0,0.08)' }}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-amber-300 flex items-center gap-2">
+              <ShieldCheck size={15} />
+              Admin Overview — you can see all users&apos; data
+            </h2>
+            <Link href="/admin/users">
+              <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
+                                 text-amber-300 border border-amber-700 hover:bg-amber-700/20 transition-colors">
+                <Users size={12} />
+                Manage Users
+              </button>
+            </Link>
+          </div>
+          <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="rounded-lg p-3 bg-black/20">
+              <p className="text-xs text-amber-400/70">Registered Users</p>
+              <p className="text-xl font-bold text-amber-300 mt-0.5">{userCount ?? '…'}</p>
+            </div>
+            <div className="rounded-lg p-3 bg-black/20">
+              <p className="text-xs text-amber-400/70">Total Jobs (all users)</p>
+              <p className="text-xl font-bold text-amber-300 mt-0.5">{loading ? '…' : jobs.length}</p>
+            </div>
+            <div className="rounded-lg p-3 bg-black/20">
+              <p className="text-xs text-amber-400/70">Saved Models (all users)</p>
+              <p className="text-xl font-bold text-amber-300 mt-0.5">{loading ? '…' : counts.models}</p>
+            </div>
+            <div className="rounded-lg p-3 bg-black/20">
+              <p className="text-xs text-amber-400/70">Experiments (all users)</p>
+              <p className="text-xl font-bold text-amber-300 mt-0.5">{loading ? '…' : counts.experiments}</p>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">

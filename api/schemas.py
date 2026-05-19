@@ -170,6 +170,14 @@ class UserResponse(BaseModel):
     created_at: datetime
     last_login_at: Optional[datetime]
 
+    @field_validator('role', mode='before')
+    @classmethod
+    def normalise_role(cls, v: object) -> str:
+        """Ensure role is always a plain lowercase string regardless of enum type."""
+        if hasattr(v, 'value'):
+            return str(v.value)
+        return str(v).split('.')[-1].lower()
+
 
 class UserListResponse(BaseModel):
     total: int

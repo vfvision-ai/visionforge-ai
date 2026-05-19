@@ -80,7 +80,7 @@ export default function Sidebar() {
         })}
 
         {/* Admin-only section */}
-        {user?.role === 'admin' && (
+        {user?.role?.toLowerCase() === 'admin' && (
           <>
             <div className="pt-3 pb-1 px-3">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Admin</p>
@@ -118,9 +118,18 @@ export default function Sidebar() {
               <p className="text-xs font-medium text-white truncate">{user.full_name}</p>
               <p className="text-xs text-slate-400 truncate">{user.email}</p>
             </div>
-            {user.role === 'admin' && (
-              <span title="Admin">
-                <ShieldCheck size={14} className="text-amber-400 flex-shrink-0" />
+          </div>
+          {/* Role pill — always visible */}
+          <div className="mb-2">
+            {user.role?.toLowerCase() === 'admin' ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-900/60 text-amber-300 border border-amber-700">
+                <ShieldCheck size={10} />
+                Administrator
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-700 text-slate-300">
+                <User size={10} />
+                User
               </span>
             )}
           </div>
