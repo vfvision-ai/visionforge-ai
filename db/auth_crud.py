@@ -40,12 +40,18 @@ def update_last_login(db: Session, user: User) -> None:
     user.last_login_at = datetime.now(timezone.utc)
 
 
-def list_users(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(User).order_by(User.created_at.desc()).offset(skip).limit(limit).all()
+def list_users(db: Session, skip: int = 0, limit: int = 100, domain: Optional[str] = None):
+    q = db.query(User)
+    if domain:
+        q = q.filter(User.email.like(f'%@{domain}'))
+    return q.order_by(User.created_at.desc()).offset(skip).limit(limit).all()
 
 
-def count_users(db: Session) -> int:
-    return db.query(User).count()
+def count_users(db: Session, domain: Optional[str] = None) -> int:
+    q = db.query(User)
+    if domain:
+        q = q.filter(User.email.like(f'%@{domain}'))
+    return q.count()
 
 
 def deactivate_user(db: Session, user_id: str) -> Optional[User]:

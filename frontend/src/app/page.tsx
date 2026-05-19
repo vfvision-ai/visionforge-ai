@@ -137,7 +137,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-amber-300 flex items-center gap-2">
               <ShieldCheck size={15} />
-              Admin Overview — you can see all users&apos; data
+              Admin Overview &mdash; managing your organisation&apos;s users
             </h2>
             <Link href="/admin/users">
               <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium

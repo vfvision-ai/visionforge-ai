@@ -149,8 +149,9 @@ def list_users(
 ):
     if current_user.role != UserRole.ADMIN:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
-    users = auth_crud.list_users(db, skip=skip, limit=limit)
-    total = auth_crud.count_users(db)
+    domain = current_user.email.split('@')[-1]
+    users = auth_crud.list_users(db, skip=skip, limit=limit, domain=domain)
+    total = auth_crud.count_users(db, domain=domain)
     return UserListResponse(total=total, users=users)
 
 
@@ -167,6 +168,10 @@ def update_user(
     target = auth_crud.get_user_by_id(db, user_id)
     if not target:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    # Ensure admin can only manage users from their own domain
+    admin_domain = current_user.email.split('@')[-1]
+    if target.email.split('@')[-1] != admin_domain:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot manage users from a different domain.")
     # Prevent admin from deactivating themselves
     if target.id == current_user.id and payload.is_active is False:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot deactivate your own account.")
@@ -192,11 +197,14 @@ def delete_user(
 ):
     if current_user.role != UserRole.ADMIN:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
-    if user_id == current_user.id:
+    if user_id == str(current_user.id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot delete your own account.")
     target = auth_crud.get_user_by_id(db, user_id)
     if not target:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    admin_domain = current_user.email.split('@')[-1]
+    if target.email.split('@')[-1] != admin_domain:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot manage users from a different domain.")
     db.delete(target)
     db.commit()
     logger.info("Admin %s deleted user %s", current_user.email, target.email)
