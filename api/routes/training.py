@@ -115,10 +115,19 @@ def list_jobs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Admins see all jobs; regular users see only their own
-    uid = None if current_user.role == UserRole.ADMIN else current_user.id
-    jobs = crud.list_jobs(db, skip=skip, limit=limit, status=status_filter, framework=framework, user_id=uid)
-    total = crud.count_jobs(db, status=status_filter, framework=framework, user_id=uid)
+    # Admins see jobs for their own domain users only; regular users see only their own
+    if current_user.role == UserRole.ADMIN:
+        domain = current_user.email.split('@')[-1]
+        from db.models import User as UserModel
+        domain_user_ids = [
+            str(u.id) for u in
+            db.query(UserModel).filter(UserModel.email.like(f'%@{domain}')).all()
+        ]
+        jobs = crud.list_jobs(db, skip=skip, limit=limit, status=status_filter, framework=framework, user_ids=domain_user_ids)
+        total = crud.count_jobs(db, status=status_filter, framework=framework, user_ids=domain_user_ids)
+    else:
+        jobs = crud.list_jobs(db, skip=skip, limit=limit, status=status_filter, framework=framework, user_id=str(current_user.id))
+        total = crud.count_jobs(db, status=status_filter, framework=framework, user_id=str(current_user.id))
     return JobListResponse(total=total, jobs=jobs)
 
 

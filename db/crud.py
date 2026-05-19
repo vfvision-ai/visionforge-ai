@@ -22,17 +22,21 @@ def get_experiment(db: Session, exp_id: str) -> Optional[Experiment]:
     return db.query(Experiment).filter(Experiment.id == exp_id).first()
 
 
-def list_experiments(db: Session, skip: int = 0, limit: int = 100, user_id: Optional[str] = None) -> List[Experiment]:
+def list_experiments(db: Session, skip: int = 0, limit: int = 100, user_id: Optional[str] = None, user_ids: Optional[list] = None) -> List[Experiment]:
     q = db.query(Experiment)
     if user_id:
         q = q.filter(Experiment.user_id == user_id)
+    elif user_ids is not None:
+        q = q.filter(Experiment.user_id.in_(user_ids))
     return q.order_by(Experiment.created_at.desc()).offset(skip).limit(limit).all()
 
 
-def count_experiments(db: Session, user_id: Optional[str] = None) -> int:
+def count_experiments(db: Session, user_id: Optional[str] = None, user_ids: Optional[list] = None) -> int:
     q = db.query(Experiment)
     if user_id:
         q = q.filter(Experiment.user_id == user_id)
+    elif user_ids is not None:
+        q = q.filter(Experiment.user_id.in_(user_ids))
     return q.count()
 
 
@@ -76,6 +80,7 @@ def list_jobs(
     status: Optional[str] = None,
     framework: Optional[str] = None,
     user_id: Optional[str] = None,
+    user_ids: Optional[list] = None,
 ) -> List[TrainingJob]:
     q = db.query(TrainingJob)
     if status:
@@ -84,6 +89,8 @@ def list_jobs(
         q = q.filter(TrainingJob.framework == framework)
     if user_id:
         q = q.filter(TrainingJob.user_id == user_id)
+    elif user_ids is not None:
+        q = q.filter(TrainingJob.user_id.in_(user_ids))
     return q.order_by(TrainingJob.created_at.desc()).offset(skip).limit(limit).all()
 
 
@@ -92,6 +99,7 @@ def count_jobs(
     status: Optional[str] = None,
     framework: Optional[str] = None,
     user_id: Optional[str] = None,
+    user_ids: Optional[list] = None,
 ) -> int:
     q = db.query(TrainingJob)
     if status:
@@ -100,6 +108,8 @@ def count_jobs(
         q = q.filter(TrainingJob.framework == framework)
     if user_id:
         q = q.filter(TrainingJob.user_id == user_id)
+    elif user_ids is not None:
+        q = q.filter(TrainingJob.user_id.in_(user_ids))
     return q.count()
 
 
@@ -206,10 +216,13 @@ def list_models(
     framework: Optional[str] = None,
     task_type: Optional[str] = None,
     user_id: Optional[str] = None,
+    user_ids: Optional[list] = None,
 ) -> List[ModelVersion]:
     q = db.query(ModelVersion)
     if user_id:
         q = q.join(TrainingJob, ModelVersion.job_id == TrainingJob.id).filter(TrainingJob.user_id == user_id)
+    elif user_ids is not None:
+        q = q.join(TrainingJob, ModelVersion.job_id == TrainingJob.id).filter(TrainingJob.user_id.in_(user_ids))
     if framework:
         q = q.filter(ModelVersion.framework == framework)
     if task_type:
@@ -222,10 +235,13 @@ def count_models(
     framework: Optional[str] = None,
     task_type: Optional[str] = None,
     user_id: Optional[str] = None,
+    user_ids: Optional[list] = None,
 ) -> int:
     q = db.query(ModelVersion)
     if user_id:
         q = q.join(TrainingJob, ModelVersion.job_id == TrainingJob.id).filter(TrainingJob.user_id == user_id)
+    elif user_ids is not None:
+        q = q.join(TrainingJob, ModelVersion.job_id == TrainingJob.id).filter(TrainingJob.user_id.in_(user_ids))
     if framework:
         q = q.filter(ModelVersion.framework == framework)
     if task_type:

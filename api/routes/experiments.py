@@ -32,9 +32,18 @@ def list_experiments(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    uid = None if current_user.role == UserRole.ADMIN else current_user.id
-    experiments = crud.list_experiments(db, skip=skip, limit=limit, user_id=uid)
-    total = crud.count_experiments(db, user_id=uid)
+    if current_user.role == UserRole.ADMIN:
+        from db.models import User as UserModel
+        domain = current_user.email.split('@')[-1]
+        domain_user_ids = [
+            str(u.id) for u in
+            db.query(UserModel).filter(UserModel.email.like(f'%@{domain}')).all()
+        ]
+        experiments = crud.list_experiments(db, skip=skip, limit=limit, user_ids=domain_user_ids)
+        total = crud.count_experiments(db, user_ids=domain_user_ids)
+    else:
+        experiments = crud.list_experiments(db, skip=skip, limit=limit, user_id=str(current_user.id))
+        total = crud.count_experiments(db, user_id=str(current_user.id))
     return ExperimentListResponse(total=total, experiments=experiments)
 
 
