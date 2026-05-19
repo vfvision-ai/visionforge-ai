@@ -29,6 +29,11 @@ class Settings:
     # Security
     SECRET_KEY: str = config('SECRET_KEY', default='dev-secret-key-change-in-production')
     ALLOWED_ORIGINS: list = config('ALLOWED_ORIGINS', default='http://localhost:8501', cast=Csv())
+
+    # JWT
+    JWT_SECRET_KEY: str = config('JWT_SECRET_KEY', default='change-me-in-production-use-a-long-random-string')
+    JWT_ACCESS_EXPIRE_MINUTES: int = config('JWT_ACCESS_EXPIRE_MINUTES', default=60, cast=int)
+    JWT_REFRESH_EXPIRE_DAYS: int   = config('JWT_REFRESH_EXPIRE_DAYS',   default=30, cast=int)
     MAX_FILE_SIZE_MB: int = config('MAX_FILE_SIZE_MB', default=500, cast=int)
     RATE_LIMIT_REQUESTS: int = config('RATE_LIMIT_REQUESTS', default=100, cast=int)
     RATE_LIMIT_PERIOD: int = config('RATE_LIMIT_PERIOD', default=60, cast=int)
