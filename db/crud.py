@@ -11,8 +11,8 @@ from db.models import Experiment, TrainingJob, ModelVersion, JobStatus
 
 
 # ── Experiments ───────────────────────────────────────────────────────────────
-def create_experiment(db: Session, name: str, description: str = "", tags: Optional[List] = None) -> Experiment:
-    exp = Experiment(name=name, description=description, tags=tags or [])
+def create_experiment(db: Session, name: str, description: str = "", tags: Optional[List] = None, user_id: Optional[str] = None) -> Experiment:
+    exp = Experiment(name=name, description=description, tags=tags or [], user_id=user_id)
     db.add(exp)
     db.flush()
     return exp
@@ -22,12 +22,18 @@ def get_experiment(db: Session, exp_id: str) -> Optional[Experiment]:
     return db.query(Experiment).filter(Experiment.id == exp_id).first()
 
 
-def list_experiments(db: Session, skip: int = 0, limit: int = 100) -> List[Experiment]:
-    return db.query(Experiment).order_by(Experiment.created_at.desc()).offset(skip).limit(limit).all()
+def list_experiments(db: Session, skip: int = 0, limit: int = 100, user_id: Optional[str] = None) -> List[Experiment]:
+    q = db.query(Experiment)
+    if user_id:
+        q = q.filter(Experiment.user_id == user_id)
+    return q.order_by(Experiment.created_at.desc()).offset(skip).limit(limit).all()
 
 
-def count_experiments(db: Session) -> int:
-    return db.query(Experiment).count()
+def count_experiments(db: Session, user_id: Optional[str] = None) -> int:
+    q = db.query(Experiment)
+    if user_id:
+        q = q.filter(Experiment.user_id == user_id)
+    return q.count()
 
 
 # ── Training jobs ─────────────────────────────────────────────────────────────
@@ -41,6 +47,7 @@ def create_job(
     dataset_config: Dict[str, Any],
     experiment_id: Optional[str] = None,
     output_dir: Optional[str] = None,
+    user_id: Optional[str] = None,
 ) -> TrainingJob:
     job = TrainingJob(
         task_type=task_type,
@@ -51,6 +58,7 @@ def create_job(
         dataset_config=dataset_config,
         experiment_id=experiment_id,
         output_dir=output_dir,
+        user_id=user_id,
     )
     db.add(job)
     db.flush()
@@ -67,12 +75,15 @@ def list_jobs(
     limit: int = 50,
     status: Optional[str] = None,
     framework: Optional[str] = None,
+    user_id: Optional[str] = None,
 ) -> List[TrainingJob]:
     q = db.query(TrainingJob)
     if status:
         q = q.filter(TrainingJob.status == status)
     if framework:
         q = q.filter(TrainingJob.framework == framework)
+    if user_id:
+        q = q.filter(TrainingJob.user_id == user_id)
     return q.order_by(TrainingJob.created_at.desc()).offset(skip).limit(limit).all()
 
 
@@ -80,12 +91,15 @@ def count_jobs(
     db: Session,
     status: Optional[str] = None,
     framework: Optional[str] = None,
+    user_id: Optional[str] = None,
 ) -> int:
     q = db.query(TrainingJob)
     if status:
         q = q.filter(TrainingJob.status == status)
     if framework:
         q = q.filter(TrainingJob.framework == framework)
+    if user_id:
+        q = q.filter(TrainingJob.user_id == user_id)
     return q.count()
 
 
@@ -191,8 +205,11 @@ def list_models(
     limit: int = 200,
     framework: Optional[str] = None,
     task_type: Optional[str] = None,
+    user_id: Optional[str] = None,
 ) -> List[ModelVersion]:
     q = db.query(ModelVersion)
+    if user_id:
+        q = q.join(TrainingJob, ModelVersion.job_id == TrainingJob.id).filter(TrainingJob.user_id == user_id)
     if framework:
         q = q.filter(ModelVersion.framework == framework)
     if task_type:
@@ -204,8 +221,11 @@ def count_models(
     db: Session,
     framework: Optional[str] = None,
     task_type: Optional[str] = None,
+    user_id: Optional[str] = None,
 ) -> int:
     q = db.query(ModelVersion)
+    if user_id:
+        q = q.join(TrainingJob, ModelVersion.job_id == TrainingJob.id).filter(TrainingJob.user_id == user_id)
     if framework:
         q = q.filter(ModelVersion.framework == framework)
     if task_type:

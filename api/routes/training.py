@@ -13,9 +13,9 @@ from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from api.schemas import TrainingSubmit, JobResponse, JobListResponse
-from api.dependencies import get_db, require_api_key
+from api.dependencies import get_db, get_current_user
 from db import crud
-from db.models import JobStatus
+from db.models import JobStatus, UserRole, User
 
 # Map framework name → importable module to check availability at request time
 _FRAMEWORK_MODULE = {
@@ -56,7 +56,7 @@ router = APIRouter()
 def submit_training_job(
     payload: TrainingSubmit,
     db: Session = Depends(get_db),
-    _: str = Depends(require_api_key),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Submit a new asynchronous training job.
@@ -88,6 +88,7 @@ def submit_training_job(
         dataset_config=payload.dataset_config,
         experiment_id=payload.experiment_id,
         output_dir=output_dir,
+        user_id=current_user.id,
     )
     db.commit()
 
@@ -112,9 +113,12 @@ def list_jobs(
     status_filter: Optional[str] = Query(None, alias="status"),
     framework: Optional[str] = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    jobs = crud.list_jobs(db, skip=skip, limit=limit, status=status_filter, framework=framework)
-    total = crud.count_jobs(db, status=status_filter, framework=framework)
+    # Admins see all jobs; regular users see only their own
+    uid = None if current_user.role == UserRole.ADMIN else current_user.id
+    jobs = crud.list_jobs(db, skip=skip, limit=limit, status=status_filter, framework=framework, user_id=uid)
+    total = crud.count_jobs(db, status=status_filter, framework=framework, user_id=uid)
     return JobListResponse(total=total, jobs=jobs)
 
 
@@ -122,9 +126,12 @@ def list_jobs(
 def get_job(
     job_id: str,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     job = crud.get_job(db, job_id)
     if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id!r} not found.")
+    if current_user.role != UserRole.ADMIN and job.user_id != current_user.id:
         raise HTTPException(status_code=404, detail=f"Job {job_id!r} not found.")
     return job
 
@@ -137,10 +144,12 @@ def get_job(
 def cancel_job(
     job_id: str,
     db: Session = Depends(get_db),
-    _: str = Depends(require_api_key),
+    current_user: User = Depends(get_current_user),
 ):
     job = crud.get_job(db, job_id)
     if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id!r} not found.")
+    if current_user.role != UserRole.ADMIN and job.user_id != current_user.id:
         raise HTTPException(status_code=404, detail=f"Job {job_id!r} not found.")
 
     if job.status not in (JobStatus.PENDING, JobStatus.RUNNING):
@@ -165,9 +174,12 @@ def cancel_job(
 def download_model_file(
     job_id: str,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     job = crud.get_job(db, job_id)
     if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id!r} not found.")
+    if current_user.role != UserRole.ADMIN and job.user_id != current_user.id:
         raise HTTPException(status_code=404, detail=f"Job {job_id!r} not found.")
     if not job.model_path or not os.path.isfile(job.model_path):
         raise HTTPException(status_code=404, detail="Model file not found on disk.")
@@ -182,9 +194,12 @@ def download_model_file(
 def download_history_csv(
     job_id: str,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     job = crud.get_job(db, job_id)
     if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id!r} not found.")
+    if current_user.role != UserRole.ADMIN and job.user_id != current_user.id:
         raise HTTPException(status_code=404, detail=f"Job {job_id!r} not found.")
 
     raw = job.training_history
@@ -237,6 +252,7 @@ def generate_test_samples(
     num_samples: int = Query(default=50, ge=1, le=500),
     image_format: str = Query(default="png"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Extract `num_samples` labelled images from the job's dataset and return them
@@ -249,6 +265,8 @@ def generate_test_samples(
 
     job = crud.get_job(db, job_id)
     if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id!r} not found.")
+    if current_user.role != UserRole.ADMIN and job.user_id != current_user.id:
         raise HTTPException(status_code=404, detail=f"Job {job_id!r} not found.")
 
     if job.status not in (JobStatus.COMPLETED, "completed"):

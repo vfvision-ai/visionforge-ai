@@ -56,6 +56,7 @@ class Experiment(Base):
     __tablename__ = "experiments"
 
     id          = Column(String, primary_key=True, default=_uuid)
+    user_id     = Column(String, ForeignKey("users.id"), nullable=True, index=True)
     name        = Column(String(255), nullable=False)
     description = Column(Text, default="")
     tags        = Column(JSON, default=list)          # ["cv", "cifar-10"]
@@ -74,6 +75,7 @@ class TrainingJob(Base):
 
     id              = Column(String, primary_key=True, default=_uuid)
     experiment_id   = Column(String, ForeignKey("experiments.id"), nullable=True)
+    user_id         = Column(String, ForeignKey("users.id"), nullable=True, index=True)
 
     # What is being trained
     task_type       = Column(SAEnum(TaskType),  nullable=False)

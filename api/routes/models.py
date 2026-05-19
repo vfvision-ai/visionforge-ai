@@ -12,8 +12,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from api.schemas import ModelResponse, ModelListResponse
-from api.dependencies import get_db, require_api_key
+from api.dependencies import get_db, get_current_user
 from db import crud
+from db.models import User, UserRole
 
 router = APIRouter()
 
@@ -25,9 +26,11 @@ def list_models(
     framework: Optional[str] = None,
     task_type: Optional[str] = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    models = crud.list_models(db, skip=skip, limit=limit, framework=framework, task_type=task_type)
-    total = crud.count_models(db, framework=framework, task_type=task_type)
+    uid = None if current_user.role == UserRole.ADMIN else current_user.id
+    models = crud.list_models(db, skip=skip, limit=limit, framework=framework, task_type=task_type, user_id=uid)
+    total = crud.count_models(db, framework=framework, task_type=task_type, user_id=uid)
     return ModelListResponse(total=total, models=models)
 
 
@@ -39,15 +42,20 @@ def list_models(
 def promote_model(
     model_id: str,
     db: Session = Depends(get_db),
-    _: str = Depends(require_api_key),
+    current_user: User = Depends(get_current_user),
 ):
     """Marks *this* model as the production model and demotes all others."""
-    mv = crud.promote_model(db, model_id)
+    from db.models import ModelVersion, TrainingJob as TJ
+    mv = db.query(ModelVersion).filter_by(id=model_id).first()
     if not mv:
         raise HTTPException(status_code=404, detail=f"Model {model_id!r} not found.")
+    job_uid = db.query(TJ.user_id).filter(TJ.id == mv.job_id).scalar()
+    if current_user.role != UserRole.ADMIN and job_uid != current_user.id:
+        raise HTTPException(status_code=404, detail=f"Model {model_id!r} not found.")
+    result = crud.promote_model(db, model_id)
     db.commit()
-    db.refresh(mv)
-    return mv
+    db.refresh(result)
+    return result
 
 
 @router.delete(
@@ -58,10 +66,14 @@ def promote_model(
 def delete_model(
     model_id: str,
     db: Session = Depends(get_db),
-    _: str = Depends(require_api_key),
+    current_user: User = Depends(get_current_user),
 ):
-    mv = db.query(__import__('db.models', fromlist=['ModelVersion']).ModelVersion).filter_by(id=model_id).first()
+    from db.models import ModelVersion, TrainingJob as TJ
+    mv = db.query(ModelVersion).filter_by(id=model_id).first()
     if not mv:
+        raise HTTPException(status_code=404, detail=f"Model {model_id!r} not found.")
+    job_uid = db.query(TJ.user_id).filter(TJ.id == mv.job_id).scalar()
+    if current_user.role != UserRole.ADMIN and job_uid != current_user.id:
         raise HTTPException(status_code=404, detail=f"Model {model_id!r} not found.")
     db.delete(mv)
     db.commit()
