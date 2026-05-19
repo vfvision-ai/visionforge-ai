@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from db.database import init_db
-from api.routes import training, models, experiments, health, inference
+from api.routes import training, models, experiments, health, inference, auth as auth_routes
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +75,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # ── routers ───────────────────────────────────────────────────────────────────
 app.include_router(health.router,       tags=["Health"])
+app.include_router(auth_routes.router,  prefix="/api/v1/auth",        tags=["Auth"])
 app.include_router(experiments.router,  prefix="/api/v1/experiments",  tags=["Experiments"])
 app.include_router(training.router,     prefix="/api/v1/training",      tags=["Training"])
 app.include_router(models.router,       prefix="/api/v1/models",        tags=["Models"])

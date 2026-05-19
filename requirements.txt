@@ -24,8 +24,13 @@ psycopg2-binary==2.9.9
 
 # Data validation & settings
 pydantic==2.12.5
+pydantic[email]==2.12.5
 pydantic-settings==2.2.1
 python-decouple==3.8
+
+# Authentication
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
 
 # Deep learning utilities (framework-agnostic)
 numpy==1.24.0

@@ -1,9 +1,15 @@
 import type {
   TrainingJob, Experiment, ModelVersion, HealthStatus, TrainingSubmitPayload, SystemInfo,
+  User, AuthTokens,
 } from '@/types'
 
 const BASE = '/api/v1'
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? ''
+
+function getAccessToken(): string | null {
+  if (typeof window === 'undefined') return null
+  return localStorage.getItem('vf_access_token')
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
@@ -11,6 +17,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...(init?.headers as Record<string, string>),
   }
   if (API_KEY) headers['X-API-Key'] = API_KEY
+  const token = getAccessToken()
+  if (token) headers['Authorization'] = `Bearer ${token}`
   const res = await fetch(`${BASE}${path}`, {
     ...init,
     headers,
@@ -22,6 +30,27 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return res.json()
 }
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+export const loginUser = (email: string, password: string) =>
+  request<AuthTokens>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  })
+
+export const registerUser = (email: string, full_name: string, password: string) =>
+  request<User>('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ email, full_name, password }),
+  })
+
+export const refreshAccessToken = (refresh_token: string) =>
+  request<AuthTokens>('/auth/refresh', {
+    method: 'POST',
+    body: JSON.stringify({ refresh_token }),
+  })
+
+export const getMe = () => request<User>('/auth/me')
 
 // ── Health ────────────────────────────────────────────────────────────────────
 export const getHealth = () =>
