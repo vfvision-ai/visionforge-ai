@@ -5,7 +5,7 @@ import React, {
 } from 'react'
 import { useRouter } from 'next/navigation'
 import type { User, AuthTokens } from '@/types'
-import { loginUser, registerUser, refreshAccessToken } from '@/lib/api'
+import { loginUser, registerUser, refreshAccessToken, getMe } from '@/lib/api'
 
 const ACCESS_KEY  = 'vf_access_token'
 const REFRESH_KEY = 'vf_refresh_token'
@@ -38,28 +38,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setLoading] = useState(true)
   const router = useRouter()
 
-  // On mount: restore user from storage or try refresh
+  // On mount: restore session then always re-fetch /me to get fresh role/status
   useEffect(() => {
     const raw = localStorage.getItem(USER_KEY)
     const token = localStorage.getItem(ACCESS_KEY)
     const refreshToken = localStorage.getItem(REFRESH_KEY)
 
-    if (raw && token) {
-      try {
-        setUser(JSON.parse(raw))
+    async function init() {
+      // Restore cached user immediately so UI doesn't flash empty
+      if (raw && token) {
+        try { setUser(JSON.parse(raw)) } catch { /* ignore */ }
+      }
+
+      // Try to get a valid access token
+      let validToken = token
+      if (!validToken && refreshToken) {
+        try {
+          const tokens = await refreshAccessToken(refreshToken)
+          persist(tokens)
+          validToken = tokens.access_token
+        } catch {
+          clear()
+          setLoading(false)
+          return
+        }
+      }
+
+      if (!validToken) {
+        clear()
         setLoading(false)
         return
-      } catch { /* fall through */ }
+      }
+
+      // Always fetch fresh user data so role/status is up to date
+      try {
+        const fresh = await getMe()
+        setUser(fresh)
+        localStorage.setItem(USER_KEY, JSON.stringify(fresh))
+      } catch {
+        // Token invalid — clear and force re-login
+        clear()
+        setUser(null)
+      } finally {
+        setLoading(false)
+      }
     }
 
-    if (refreshToken) {
-      refreshAccessToken(refreshToken)
-        .then(tokens => { persist(tokens); setUser(tokens.user) })
-        .catch(clear)
-        .finally(() => setLoading(false))
-    } else {
-      setLoading(false)
-    }
+    init()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const login = useCallback(async (email: string, password: string) => {
