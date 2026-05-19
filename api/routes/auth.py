@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 from api import auth as auth_utils
 from api.dependencies import get_db, get_current_user
 from api.schemas import (
-    UserRegister, UserLogin, RefreshRequest, TokenResponse, UserResponse, UserListResponse,
+    UserRegister, UserLogin, RefreshRequest, TokenResponse,
+    UserResponse, UserListResponse, UserPatch,
 )
 from db import auth_crud
 from db.models import User, UserRole
@@ -113,3 +114,51 @@ def list_users(
     users = auth_crud.list_users(db, skip=skip, limit=limit)
     total = auth_crud.count_users(db)
     return UserListResponse(total=total, users=users)
+
+
+# ── Admin: update user (activate / deactivate / promote / demote) ─────────────
+@router.patch("/users/{user_id}", response_model=UserResponse, summary="[Admin] Update a user")
+def update_user(
+    user_id: str,
+    payload: UserPatch,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
+    target = auth_crud.get_user_by_id(db, user_id)
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    # Prevent admin from deactivating themselves
+    if target.id == current_user.id and payload.is_active is False:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot deactivate your own account.")
+    if payload.is_active is not None:
+        target.is_active = payload.is_active
+    if payload.role is not None:
+        try:
+            target.role = UserRole(payload.role)
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="role must be 'admin' or 'user'.")
+    db.commit()
+    db.refresh(target)
+    logger.info("Admin %s updated user %s: %s", current_user.email, target.email, payload.model_dump(exclude_none=True))
+    return target
+
+
+# ── Admin: delete user ────────────────────────────────────────────────────────
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT, summary="[Admin] Delete a user")
+def delete_user(
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
+    if user_id == current_user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot delete your own account.")
+    target = auth_crud.get_user_by_id(db, user_id)
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    db.delete(target)
+    db.commit()
+    logger.info("Admin %s deleted user %s", current_user.email, target.email)

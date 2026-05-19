@@ -107,6 +107,11 @@ export interface AuthTokens {
   user: User
 }
 
+export interface UserListResponse {
+  total: number
+  users: User[]
+}
+
 export interface TrainingSubmitPayload {
   task_type: TaskType
   framework: Framework

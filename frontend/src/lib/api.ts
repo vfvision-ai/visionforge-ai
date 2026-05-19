@@ -1,6 +1,6 @@
 import type {
   TrainingJob, Experiment, ModelVersion, HealthStatus, TrainingSubmitPayload, SystemInfo,
-  User, AuthTokens,
+  User, AuthTokens, UserListResponse,
 } from '@/types'
 
 const BASE = '/api/v1'
@@ -58,6 +58,16 @@ export const refreshAccessToken = (refresh_token: string) =>
   })
 
 export const getMe = () => request<User>('/auth/me')
+
+// ── Admin: user management ────────────────────────────────────────────────────
+export const getAdminUsers = (skip = 0, limit = 100) =>
+  request<UserListResponse>(`/auth/users?skip=${skip}&limit=${limit}`)
+
+export const patchUser = (userId: string, patch: { is_active?: boolean; role?: string }) =>
+  request<User>(`/auth/users/${userId}`, { method: 'PATCH', body: JSON.stringify(patch) })
+
+export const deleteUser = (userId: string) =>
+  request<void>(`/auth/users/${userId}`, { method: 'DELETE' })
 
 // ── Health ────────────────────────────────────────────────────────────────────
 export const getHealth = () =>

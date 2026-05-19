@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import {
   LayoutDashboard, Database, Cpu, BarChart3,
-  Box, Zap, Settings, Github, GitCompare, LogOut, ShieldCheck, User,
+  Box, Zap, Settings, Github, GitCompare, LogOut, ShieldCheck, User, Users,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getJobs } from '@/lib/api'
@@ -19,6 +19,10 @@ const NAV = [
   { href: '/models',     label: 'Models',     icon: Box              },
   { href: '/inference',  label: 'Inference',  icon: Zap              },
   { href: '/settings',   label: 'Settings',   icon: Settings         },
+]
+
+const ADMIN_NAV = [
+  { href: '/admin/users', label: 'Users', icon: Users },
 ]
 
 export default function Sidebar() {
@@ -74,6 +78,33 @@ export default function Sidebar() {
             </Link>
           )
         })}
+
+        {/* Admin-only section */}
+        {user?.role === 'admin' && (
+          <>
+            <div className="pt-3 pb-1 px-3">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Admin</p>
+            </div>
+            {ADMIN_NAV.map(({ href, label, icon: Icon }) => {
+              const active = path.startsWith(href)
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  className={cn(
+                    'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+                    active
+                      ? 'bg-amber-600 text-white'
+                      : 'text-amber-400 hover:text-white hover:bg-surface-600',
+                  )}
+                >
+                  <Icon size={16} />
+                  <span className="flex-1">{label}</span>
+                </Link>
+              )
+            })}
+          </>
+        )}
       </nav>
 
       {/* User info + logout */}

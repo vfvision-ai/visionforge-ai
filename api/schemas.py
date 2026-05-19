@@ -176,6 +176,12 @@ class UserListResponse(BaseModel):
     users: List[UserResponse]
 
 
+class UserPatch(BaseModel):
+    """Admin-only: fields that can be updated on a user."""
+    is_active: Optional[bool] = None
+    role: Optional[str] = None  # "admin" | "user"
+
+
 class RefreshRequest(BaseModel):
     refresh_token: str
 
