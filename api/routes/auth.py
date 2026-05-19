@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -9,15 +10,52 @@ from sqlalchemy.orm import Session
 
 from api import auth as auth_utils
 from api.dependencies import get_db, get_current_user
+
 from api.schemas import (
     UserRegister, UserLogin, RefreshRequest, TokenResponse,
-    UserResponse, UserListResponse, UserPatch,
+    UserResponse, UserListResponse, UserPatch, BootstrapAdminRequest,
 )
 from db import auth_crud
 from db.models import User, UserRole
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+# ── Bootstrap Admin ───────────────────────────────────────────────────────────
+@router.post(
+    "/bootstrap-admin",
+    response_model=UserResponse,
+    summary="Promote a user to admin (only usable when no admin exists)",
+)
+def bootstrap_admin(payload: BootstrapAdminRequest, db: Session = Depends(get_db)):
+    """One-time endpoint: promotes *payload.email* to admin when zero admins exist.
+    Protected by SECRET_KEY so it cannot be exploited once an admin is present.
+    """
+    expected = os.getenv("SECRET_KEY", "")
+    if not expected or payload.secret != expected:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid secret.")
+
+    # Refuse if an admin already exists
+    existing_admin = db.query(User).filter(
+        User.role == UserRole.ADMIN,
+        User.is_active == True,  # noqa: E712
+    ).first()
+    if existing_admin:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An admin already exists. This endpoint is disabled.",
+        )
+
+    user = auth_crud.get_user_by_email(db, payload.email)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+
+    user = auth_crud.promote_to_admin(db, str(user.id))
+    db.commit()
+    db.refresh(user)
+    logger.info("bootstrap-admin: promoted %s to ADMIN", user.email)
+    return user
 
 
 # ── Register ──────────────────────────────────────────────────────────────────
