@@ -25,6 +25,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     cache: 'no-store',
   })
   if (!res.ok) {
+    // On 401, clear auth state and redirect to login so the user isn't stuck
+    if (res.status === 401 && typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+      localStorage.removeItem('vf_access_token')
+      localStorage.removeItem('vf_refresh_token')
+      localStorage.removeItem('vf_user')
+      window.location.href = '/login'
+    }
     const text = await res.text().catch(() => res.statusText)
     throw new Error(`${res.status}: ${text}`)
   }

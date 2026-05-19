@@ -10,14 +10,13 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   const { user, isLoading } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
+  const isPublic = PUBLIC_PATHS.some(p => pathname.startsWith(p))
 
   useEffect(() => {
-    if (isLoading) return
-    const isPublic = PUBLIC_PATHS.some(p => pathname.startsWith(p))
-    if (!user && !isPublic) {
+    if (!isLoading && !user && !isPublic) {
       router.replace('/login')
     }
-  }, [user, isLoading, pathname, router])
+  }, [user, isLoading, isPublic, router])
 
   if (isLoading) {
     return (
@@ -26,6 +25,9 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
       </div>
     )
   }
+
+  // Block render until redirect completes — prevents flash of protected content
+  if (!user && !isPublic) return null
 
   return <>{children}</>
 }

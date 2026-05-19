@@ -1,7 +1,7 @@
 """CRUD helpers for User authentication."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -37,7 +37,7 @@ def create_user(
 
 
 def update_last_login(db: Session, user: User) -> None:
-    user.last_login_at = datetime.utcnow()
+    user.last_login_at = datetime.now(timezone.utc)
 
 
 def list_users(db: Session, skip: int = 0, limit: int = 100):

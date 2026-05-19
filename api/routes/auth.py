@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from api import auth as auth_utils
 from api.dependencies import get_db, get_current_user
 from api.schemas import (
-    UserRegister, UserLogin, TokenResponse, UserResponse, UserListResponse,
+    UserRegister, UserLogin, RefreshRequest, TokenResponse, UserResponse, UserListResponse,
 )
 from db import auth_crud
 from db.models import User, UserRole
@@ -74,8 +74,8 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
 
 # ── Refresh ───────────────────────────────────────────────────────────────────
 @router.post("/refresh", response_model=TokenResponse, summary="Refresh access token")
-def refresh(refresh_token: str, db: Session = Depends(get_db)):
-    user_id = auth_utils.decode_refresh_token(refresh_token)
+def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
+    user_id = auth_utils.decode_refresh_token(payload.refresh_token)
     if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -84,8 +84,8 @@ def refresh(refresh_token: str, db: Session = Depends(get_db)):
     user = auth_crud.get_user_by_id(db, user_id)
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found.")
-    new_access  = auth_utils.create_access_token(user.id, user.email, user.role.value)
-    new_refresh = auth_utils.create_refresh_token(user.id)
+    new_access  = auth_utils.create_access_token(str(user.id), user.email, user.role.value)
+    new_refresh = auth_utils.create_refresh_token(str(user.id))
     return TokenResponse(
         access_token=new_access,
         refresh_token=new_refresh,

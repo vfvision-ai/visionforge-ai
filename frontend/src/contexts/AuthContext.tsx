@@ -5,7 +5,7 @@ import React, {
 } from 'react'
 import { useRouter } from 'next/navigation'
 import type { User, AuthTokens } from '@/types'
-import { loginUser, registerUser, refreshAccessToken, getMe } from '@/lib/api'
+import { loginUser, registerUser, refreshAccessToken } from '@/lib/api'
 
 const ACCESS_KEY  = 'vf_access_token'
 const REFRESH_KEY = 'vf_refresh_token'
