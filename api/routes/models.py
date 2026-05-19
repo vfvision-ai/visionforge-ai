@@ -85,8 +85,10 @@ def delete_model(
 )
 def backfill_models(
     db: Session = Depends(get_db),
-    _: str = Depends(require_api_key),
+    current_user: User = Depends(get_current_user),
 ):
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
     """
     One-shot repair: scans all COMPLETED TrainingJobs that have a model_path
     but no corresponding ModelVersion record and creates one for each.
