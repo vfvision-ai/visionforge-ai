@@ -93,8 +93,20 @@ def test_pytorch_model(model_path: Path):
             logger.info(f"  Keys: {list(checkpoint.keys())}")
             arch = checkpoint.get("architecture", checkpoint.get("model_name", "unknown"))
             num_classes = checkpoint.get("num_classes", "unknown")
+            norm_mean = checkpoint.get("normalization_mean")
+            norm_std = checkpoint.get("normalization_std")
+            
             logger.info(f"  Architecture: {arch}")
             logger.info(f"  Num classes: {num_classes}")
+            
+            # Check normalization
+            if norm_mean is not None and norm_std is not None:
+                if all(m == 0.5 for m in norm_mean) and all(s == 0.5 for s in norm_std):
+                    logger.info(f"  Normalization: Z-Score (-1 to 1) - mean={norm_mean}, std={norm_std}")
+                else:
+                    logger.info(f"  Normalization: Custom - mean={norm_mean}, std={norm_std}")
+            else:
+                logger.info(f"  Normalization: None (0-1 range)")
             
             state = checkpoint.get("model_state_dict", checkpoint.get("state_dict"))
             if state:
