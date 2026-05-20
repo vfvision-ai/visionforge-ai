@@ -41,7 +41,7 @@ def _find_recent_model() -> Optional[Path]:
 
 
 def _load_pytorch_model(model_path: Path, num_classes: int, device: str):
-    """Load PyTorch model and return (model, normalization_metadata)."""
+    """Load PyTorch model and return (model, image_size, channels, norm_mean, norm_std)."""
     import torch
     import torch.nn as nn
     
@@ -50,14 +50,18 @@ def _load_pytorch_model(model_path: Path, num_classes: int, device: str):
     except Exception as e:
         raise RuntimeError(f"Failed to load checkpoint: {e}")
     
-    # Extract normalization metadata from checkpoint
+    # Extract preprocessing metadata from checkpoint
     norm_mean = None
     norm_std = None
+    image_size = None
+    channels = None
     
     if isinstance(checkpoint, dict):
-        # Read normalization from checkpoint metadata (saved by trainer)
+        # Read all preprocessing metadata (saved by trainer)
         norm_mean = checkpoint.get("normalization_mean")
         norm_std = checkpoint.get("normalization_std")
+        image_size = checkpoint.get("image_size")  # (H, W) tuple
+        channels = checkpoint.get("channels")
         
         # Try to reconstruct from checkpoint metadata
         arch = checkpoint.get("architecture", checkpoint.get("model_name", "resnet18"))
@@ -118,7 +122,11 @@ def _load_pytorch_model(model_path: Path, num_classes: int, device: str):
     if hasattr(model, "eval"):
         model.eval()
     
-    return model, norm_mean, norm_std
+    # Convert image_size to tuple if it's a list
+    if image_size and isinstance(image_size, (list, tuple)) and len(image_size) == 2:
+        image_size = (int(image_size[0]), int(image_size[1]))
+    
+    return model, image_size, channels, norm_mean, norm_std
 
 
 def _detect_in_channels(state_dict):
@@ -154,17 +162,25 @@ def _preprocess_image_pil(img, input_size: int = 224, grayscale: bool = False):
     return transform(img).unsqueeze(0)
 
 
-def _preprocess_image_pil_safe(img, input_size: int = 224, grayscale: bool = False, 
+def _preprocess_image_pil_safe(img, input_size, grayscale: bool = False, 
                                norm_mean=None, norm_std=None):
     """Robust PIL Image → torch tensor with proper normalization from checkpoint."""
     import torch
     from torchvision import transforms
+    
+    # Handle input_size as either integer or tuple
+    if isinstance(input_size, int):
+        target_size = (input_size, input_size)
+    elif isinstance(input_size, (list, tuple)) and len(input_size) == 2:
+        target_size = (int(input_size[0]), int(input_size[1]))
+    else:
+        target_size = (224, 224)  # fallback
 
     # Determine if we need grayscale or RGB based on input or detection
     if grayscale:
         img = img.convert("L")
         steps = [
-            transforms.Resize((input_size, input_size)),
+            transforms.Resize(target_size),
             transforms.ToTensor(),
         ]
         # Apply normalization if provided (from checkpoint metadata)
@@ -182,7 +198,7 @@ def _preprocess_image_pil_safe(img, input_size: int = 224, grayscale: bool = Fal
             img = img.convert("RGB")
 
         steps = [
-            transforms.Resize((input_size, input_size)),
+            transforms.Resize(target_size),
             transforms.ToTensor(),
         ]
         # Apply normalization if provided (from checkpoint metadata)
@@ -439,32 +455,40 @@ def show_inference():
         if suffix in (".pt", ".pth"):
             import torch
             device = "cuda" if __import__("torch").cuda.is_available() else "cpu"
-            model, norm_mean, norm_std = _load_pytorch_model(p, n_classes, device)
-            # Return model, framework, device, and normalization metadata
-            return model, "pytorch", device, norm_mean, norm_std
+            model, img_size, ch, norm_mean, norm_std = _load_pytorch_model(p, n_classes, device)
+            # Return model, framework, device, img_size, channels, and normalization metadata
+            return model, "pytorch", device, img_size, ch, norm_mean, norm_std
         elif suffix in (".pkl", ".joblib"):
             import joblib
-            return joblib.load(p), "sklearn", "cpu", None, None
+            return joblib.load(p), "sklearn", "cpu", None, None, None, None
         elif suffix in (".keras", ".h5"):
             try:
                 import tensorflow as tf
                 model = tf.keras.models.load_model(str(p))
-                return model, "tensorflow", "cpu", None, None
+                return model, "tensorflow", "cpu", None, None, None, None
             except Exception as e:
                 raise RuntimeError(f"Cannot load Keras model: {e}")
         else:
             raise ValueError(f"Unsupported model format: {suffix}")
 
     try:
-        model, detected_fw, device, norm_mean, norm_std = _load_model(str(model_path), len(class_names), framework)
+        model, detected_fw, device, ckpt_image_size, ckpt_channels, norm_mean, norm_std = _load_model(str(model_path), len(class_names), framework)
     except Exception as e:
         st.error(f"❌ Failed to load model: {e}")
         return
 
+    # Use checkpoint image size if available, otherwise user-specified or default
+    if ckpt_image_size and isinstance(ckpt_image_size, (list, tuple)) and len(ckpt_image_size) == 2:
+        input_h, input_w = int(ckpt_image_size[0]), int(ckpt_image_size[1])
+        st.info(f"✅ Using image size from checkpoint: {input_h}×{input_w}")
+    else:
+        input_h = input_w = input_size
+        st.warning(f"⚠️ No image size in checkpoint, using slider value: {input_size}×{input_size}")
+    
     # Display normalization info
     norm_info = "No normalization (0-1 range)"
     if norm_mean is not None and norm_std is not None:
-        if all(m == 0.5 for m in norm_mean) and all(s == 0.5 for s in norm_std):
+        if all(abs(m - 0.5) < 0.001 for m in norm_mean) and all(abs(s - 0.5) < 0.001 for s in norm_std):
             norm_info = "Z-Score normalization (-1 to 1 range)"
         else:
             norm_info = f"Custom normalization (mean={norm_mean}, std={norm_std})"
@@ -499,7 +523,7 @@ def show_inference():
                         
                         # Apply preprocessing with normalization from checkpoint
                         tensor = _preprocess_image_pil_safe(
-                            img, input_size, 
+                            img, (input_h, input_w),
                             grayscale=grayscale,
                             norm_mean=norm_mean,
                             norm_std=norm_std
