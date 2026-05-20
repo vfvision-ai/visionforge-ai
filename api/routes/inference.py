@@ -252,7 +252,14 @@ def _infer_pytorch(path: str, img, arch: str, num_classes: int,
         import numpy as np
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        checkpoint = torch.load(path, map_location=device, weights_only=False)
+        
+        try:
+            checkpoint = torch.load(path, map_location=device, weights_only=False)
+        except Exception as load_exc:
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Failed to load PyTorch model file: {load_exc}"
+            ) from load_exc
 
         if isinstance(checkpoint, dict):
             # Extract fields from checkpoint (may be enriched by newer trainer)
@@ -276,9 +283,22 @@ def _infer_pytorch(path: str, img, arch: str, num_classes: int,
                 in_ch = pre["channels"]
 
             # Rebuild the model skeleton with correct in_channels / num_classes
-            model = _build_pt_model(arch, num_classes, in_ch)
+            try:
+                model = _build_pt_model(arch, num_classes, in_ch)
+            except Exception as build_exc:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to build model architecture '{arch}': {build_exc}"
+                ) from build_exc
+                
             if state and isinstance(state, dict):
-                model.load_state_dict(state, strict=False)
+                try:
+                    model.load_state_dict(state, strict=False)
+                except Exception as state_exc:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to load model weights: {state_exc}"
+                    ) from state_exc
         else:
             # Checkpoint is already a full model object
             model  = checkpoint
@@ -289,11 +309,24 @@ def _infer_pytorch(path: str, img, arch: str, num_classes: int,
         # Build a preprocessing transform tuned to this model's actual input
         effective_pre = dict(pre)
         effective_pre["channels"] = in_ch  # use state-dict-detected channels
-        tensor = _pt_transform(img, effective_pre).to(device)
+        
+        try:
+            tensor = _pt_transform(img, effective_pre).to(device)
+        except Exception as transform_exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Image preprocessing failed: {transform_exc}"
+            ) from transform_exc
 
-        with torch.no_grad():
-            logits = model(tensor)
-            probs  = F.softmax(logits, dim=1).cpu().numpy()[0]
+        try:
+            with torch.no_grad():
+                logits = model(tensor)
+                probs  = F.softmax(logits, dim=1).cpu().numpy()[0]
+        except Exception as infer_exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Model forward pass failed: {infer_exc}"
+            ) from infer_exc
 
         k       = min(top_k, len(probs))
         top_idx = np.argsort(probs)[::-1][:k]
@@ -311,6 +344,8 @@ def _infer_pytorch(path: str, img, arch: str, num_classes: int,
         }
     except ImportError as exc:
         raise HTTPException(status_code=500, detail=f"PyTorch not installed: {exc}") from exc
+    except HTTPException:
+        raise  # Re-raise HTTPExceptions as-is
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"PyTorch inference failed: {exc}") from exc
 
@@ -321,20 +356,45 @@ def _infer_tensorflow(path: str, img, num_classes: int,
         import numpy as np
         import tensorflow as tf
 
-        model = tf.keras.models.load_model(path)
+        try:
+            model = tf.keras.models.load_model(path)
+        except Exception as load_exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to load TensorFlow model: {load_exc}"
+            ) from load_exc
 
         # Read the model's exact expected input shape — ground truth from the graph
-        inp_shape = model.input_shape  # e.g. (None, 28, 28, 1) or (None, 224, 224, 3)
-        _, h, w, c = inp_shape[0], inp_shape[1], inp_shape[2], inp_shape[3]
-        h, w, c = int(h), int(w), int(c)
+        try:
+            inp_shape = model.input_shape  # e.g. (None, 28, 28, 1) or (None, 224, 224, 3)
+            _, h, w, c = inp_shape[0], inp_shape[1], inp_shape[2], inp_shape[3]
+            h, w, c = int(h), int(w), int(c)
+        except Exception as shape_exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to read model input shape: {shape_exc}"
+            ) from shape_exc
 
-        pil_img = img.convert("L") if c == 1 else img.convert("RGB")
-        arr = np.array(pil_img.resize((w, h))).astype("float32") / 255.0
-        if arr.ndim == 2:
-            arr = arr[:, :, np.newaxis]   # (H, W) → (H, W, 1)
-        arr = np.expand_dims(arr, axis=0)  # (1, H, W, C)
+        try:
+            pil_img = img.convert("L") if c == 1 else img.convert("RGB")
+            arr = np.array(pil_img.resize((w, h))).astype("float32") / 255.0
+            if arr.ndim == 2:
+                arr = arr[:, :, np.newaxis]   # (H, W) → (H, W, 1)
+            arr = np.expand_dims(arr, axis=0)  # (1, H, W, C)
+        except Exception as prep_exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Image preprocessing failed: {prep_exc}"
+            ) from prep_exc
 
-        preds = model.predict(arr, verbose=0)[0]
+        try:
+            preds = model.predict(arr, verbose=0)[0]
+        except Exception as predict_exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Model prediction failed: {predict_exc}"
+            ) from predict_exc
+            
         k        = min(top_k, len(preds))
         top_idx  = np.argsort(preds)[::-1][:k]
         names    = _class_names(len(preds), class_names)
@@ -351,6 +411,8 @@ def _infer_tensorflow(path: str, img, num_classes: int,
         }
     except ImportError as exc:
         raise HTTPException(status_code=500, detail=f"TensorFlow not installed: {exc}") from exc
+    except HTTPException:
+        raise  # Re-raise HTTPExceptions as-is
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"TensorFlow inference failed: {exc}") from exc
 

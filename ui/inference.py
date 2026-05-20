@@ -42,33 +42,83 @@ def _find_recent_model() -> Optional[Path]:
 
 def _load_pytorch_model(model_path: Path, num_classes: int, device: str):
     import torch
-    checkpoint = torch.load(model_path, map_location=device)
+    import torch.nn as nn
+    
+    try:
+        checkpoint = torch.load(model_path, map_location=device, weights_only=False)
+    except Exception as e:
+        raise RuntimeError(f"Failed to load checkpoint: {e}")
+    
     if isinstance(checkpoint, dict):
         # Try to reconstruct from checkpoint metadata
         arch = checkpoint.get("architecture", checkpoint.get("model_name", "resnet18"))
+        state = checkpoint.get("model_state_dict", checkpoint.get("state_dict", None))
+        
+        # Get actual num_classes from checkpoint if available
+        ckpt_num_classes = checkpoint.get("num_classes", num_classes)
+        if ckpt_num_classes:
+            num_classes = int(ckpt_num_classes)
+        
         try:
+            # Try torchvision models first
             import torchvision.models as tvm
             constructor = getattr(tvm, arch.lower(), None)
             if constructor:
                 model = constructor(weights=None)
-                # Replace final layer
-                import torch.nn as nn
-                if hasattr(model, "fc"):
+                # Replace final layer to match num_classes
+                if hasattr(model, "fc") and isinstance(model.fc, nn.Linear):
                     model.fc = nn.Linear(model.fc.in_features, num_classes)
                 elif hasattr(model, "classifier"):
-                    last = model.classifier[-1]
-                    model.classifier[-1] = nn.Linear(last.in_features, num_classes)
-                state = checkpoint.get("model_state_dict", checkpoint.get("state_dict", checkpoint))
-                model.load_state_dict(state, strict=False)
+                    if isinstance(model.classifier, nn.Linear):
+                        model.classifier = nn.Linear(model.classifier.in_features, num_classes)
+                    elif isinstance(model.classifier, nn.Sequential):
+                        for i in reversed(range(len(model.classifier))):
+                            if isinstance(model.classifier[i], nn.Linear):
+                                model.classifier[i] = nn.Linear(model.classifier[i].in_features, num_classes)
+                                break
+                elif hasattr(model, "heads") and hasattr(model.heads, "head"):
+                    model.heads.head = nn.Linear(model.heads.head.in_features, num_classes)
+                
+                # Load state dict if available
+                if state and isinstance(state, dict):
+                    try:
+                        model.load_state_dict(state, strict=False)
+                    except Exception as e:
+                        logger.warning(f"Failed to load state dict strictly, trying non-strict: {e}")
+                        model.load_state_dict(state, strict=False)
             else:
-                model = checkpoint  # raw model object in checkpoint
-        except Exception:
-            model = checkpoint  # fall back – caller decides
+                # Fallback: try to use the checkpoint as-is or build from state
+                if state and isinstance(state, dict):
+                    # Try to detect architecture from state dict
+                    from utils.model_factory import ModelFactory
+                    mf = ModelFactory.__new__(ModelFactory)
+                    in_channels = _detect_in_channels(state)
+                    model = mf._build_adaptive_cnn(num_classes, in_channels)
+                    model.load_state_dict(state, strict=False)
+                else:
+                    model = checkpoint  # raw model object
+        except Exception as e:
+            logger.error(f"Failed to reconstruct model from checkpoint: {e}")
+            # Last resort: treat checkpoint as complete model
+            if state and "model_state_dict" in checkpoint:
+                raise RuntimeError(f"Cannot reconstruct model architecture '{arch}': {e}")
+            model = checkpoint
     else:
         model = checkpoint  # already a model object
+    
     if hasattr(model, "eval"):
         model.eval()
     return model
+
+
+def _detect_in_channels(state_dict):
+    """Detect input channels from first conv layer in state dict."""
+    import torch
+    for key, val in state_dict.items():
+        if isinstance(val, torch.Tensor) and val.ndim == 4 and "weight" in key.lower():
+            if any(t in key.lower() for t in ("conv", "features", "patch_embed", "stem")):
+                return int(val.shape[1])
+    return 3  # default to RGB
 
 
 def _preprocess_image_pil(img, input_size: int = 224, grayscale: bool = False):
@@ -94,23 +144,36 @@ def _preprocess_image_pil(img, input_size: int = 224, grayscale: bool = False):
     return transform(img).unsqueeze(0)
 
 
-def _preprocess_image_pil_safe(img, input_size: int = 224):
+def _preprocess_image_pil_safe(img, input_size: int = 224, grayscale: bool = False):
     """Robust PIL Image → torch tensor, handles 1/3/4 channel images."""
     import torch
     from torchvision import transforms
 
-    if img.mode == "RGBA":
-        img = img.convert("RGB")
-    elif img.mode == "L":
-        img = img.convert("RGB")
-    elif img.mode != "RGB":
-        img = img.convert("RGB")
+    # Determine if we need grayscale or RGB based on input or detection
+    if grayscale:
+        img = img.convert("L")
+        transform = transforms.Compose([
+            transforms.Resize((input_size, input_size)),
+            transforms.ToTensor(),
+            # Use standard normalization (0-1) for grayscale to match training
+        ])
+    else:
+        # Convert to RGB for color images
+        if img.mode == "RGBA":
+            img = img.convert("RGB")
+        elif img.mode == "L":
+            # Keep grayscale if model expects it, otherwise convert to RGB
+            img = img.convert("RGB")
+        elif img.mode != "RGB":
+            img = img.convert("RGB")
 
-    transform = transforms.Compose([
-        transforms.Resize((input_size, input_size)),
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-    ])
+        # Use standard normalization (0-1) instead of ImageNet stats
+        # This matches the default training normalization
+        transform = transforms.Compose([
+            transforms.Resize((input_size, input_size)),
+            transforms.ToTensor(),
+            # No normalization - matches 'Standard (0-1)' from training
+        ])
     return transform(img).unsqueeze(0)
 
 
@@ -399,7 +462,16 @@ def show_inference():
                 try:
                     if detected_fw == "pytorch":
                         import torch
-                        tensor = _preprocess_image_pil_safe(img, input_size)
+                        # Detect if model expects grayscale
+                        grayscale = False
+                        if hasattr(model, "conv1"):
+                            grayscale = model.conv1.in_channels == 1
+                        elif hasattr(model, "features") and len(model.features) > 0:
+                            first_conv = model.features[0]
+                            if hasattr(first_conv, "in_channels"):
+                                grayscale = first_conv.in_channels == 1
+                        
+                        tensor = _preprocess_image_pil_safe(img, input_size, grayscale=grayscale)
                         preds = _run_pytorch_inference(model, tensor, class_names, device)
 
                         # GradCAM
@@ -411,6 +483,7 @@ def show_inference():
                                     st.image(overlay, caption="GradCAM", use_container_width=True)
                             except Exception as ge:
                                 st.caption(f"GradCAM unavailable: {ge}")
+                                logger.debug(f"GradCAM error details: {ge}", exc_info=True)
 
                     elif detected_fw == "sklearn":
                         preds = _run_sklearn_inference(model, img, class_names)
@@ -471,6 +544,11 @@ def show_inference():
                 except Exception as e:
                     st.error(f"Inference failed: {e}")
                     logger.exception("Inference error on %s", file.name)
+                    # Show detailed error in expander for debugging
+                    with st.expander("🔍 Error Details"):
+                        st.code(str(e))
+                        import traceback
+                        st.code(traceback.format_exc())
 
     # ── Results table & download ───────────────────────────────────────────────
     if results_list:
