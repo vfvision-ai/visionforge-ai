@@ -103,20 +103,42 @@ export const submitJob = (data: TrainingSubmitPayload) =>
 export const cancelJob = (id: string) =>
   request<void>(`/training/${id}`, { method: 'DELETE' })
 
+async function downloadWithAuth(url: string, filename: string): Promise<void> {
+  const hdrs: Record<string, string> = {}
+  if (API_KEY) hdrs['X-API-Key'] = API_KEY
+  const token = getAccessToken()
+  if (token) hdrs['Authorization'] = `Bearer ${token}`
+  const res = await fetch(url, { headers: hdrs, cache: 'no-store' })
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText)
+    throw new Error(`${res.status}: ${text}`)
+  }
+  const blob = await res.blob()
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(a.href)
+}
+
 export function downloadModelFile(jobId: string) {
-  window.open(`/api/v1/training/${jobId}/download`, '_blank')
+  downloadWithAuth(`/api/v1/training/${jobId}/download`, `model_${jobId.slice(0, 8)}.pt`)
 }
 export function downloadHistoryCSV(jobId: string) {
-  window.open(`/api/v1/training/${jobId}/history.csv`, '_blank')
+  downloadWithAuth(`/api/v1/training/${jobId}/history.csv`, `history_${jobId.slice(0, 8)}.csv`)
 }
 export function downloadResultsJSON(jobId: string) {
-  window.open(`/api/v1/training/${jobId}/results.json`, '_blank')
+  downloadWithAuth(`/api/v1/training/${jobId}/results.json`, `results_${jobId.slice(0, 8)}.json`)
 }
 
 export async function generateTestSamples(jobId: string, numSamples: number, fmt: string): Promise<void> {
   const params = new URLSearchParams({ num_samples: String(numSamples), image_format: fmt })
   const hdrs: Record<string, string> = {}
   if (API_KEY) hdrs['X-API-Key'] = API_KEY
+  const token = getAccessToken()
+  if (token) hdrs['Authorization'] = `Bearer ${token}`
   const res = await fetch(`/api/v1/training/${jobId}/test-samples?${params}`, {
     method: 'POST',
     headers: hdrs,
