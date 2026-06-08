@@ -5,8 +5,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "visionforge"
-version = "2.1.0"
-description = "VisionForge — Train Vision Models Effortlessly. Automated computer vision training pipeline with advanced explainability, model versioning, and production-grade security."
+version = "2.2.0"
+description = "VisionForge — Enterprise AutoML Platform. Complete MLOps solution with advanced analytics, automated deployment, drift detection, and production-grade AI/ML capabilities."
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}

@@ -92,6 +92,11 @@ GPUtil>=1.4.0  # GPU utilization tracking
 # Advanced Monitoring (optional, for enhanced metrics)
 prometheus-client>=0.17.1  # Already included above
 
+# ===== VisionForge v2.2.0 — Advanced Features =====
+
+# Statistical Analysis & Analytics
+scipy>=1.9.0  # Statistical tests for model comparison and drift detection
+
 # Note: Model explainability dependencies (SHAP, captum) are optional
 # and can be installed separately:
 # pip install shap>=0.42.0  # For SHAP explanations

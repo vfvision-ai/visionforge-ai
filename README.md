@@ -1,7 +1,7 @@
 # VisionForge — Train Vision Models Effortlessly
 
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://python.org)
-[![Version](https://img.shields.io/badge/Version-2.1.0-blue.svg)](pyproject.toml)
+[![Version](https://img.shields.io/badge/Version-2.2.0-blue.svg)](pyproject.toml)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.25.0-red.svg)](https://streamlit.io)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.124-009688.svg)](https://fastapi.tiangolo.com)
 [![PyTorch](https://img.shields.io/badge/PyTorch-Latest-orange.svg)](https://pytorch.org)
