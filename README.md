@@ -1,7 +1,7 @@
 # VisionForge — Train Vision Models Effortlessly
 
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://python.org)
-[![Version](https://img.shields.io/badge/Version-2.0.0-blue.svg)](pyproject.toml)
+[![Version](https://img.shields.io/badge/Version-2.1.0-blue.svg)](pyproject.toml)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.25.0-red.svg)](https://streamlit.io)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.124-009688.svg)](https://fastapi.tiangolo.com)
 [![PyTorch](https://img.shields.io/badge/PyTorch-Latest-orange.svg)](https://pytorch.org)
@@ -44,43 +44,96 @@ VisionForge is composed of several cooperating services:
 
 ## Features
 
-### Automatic Dataset Analysis
+### 🆕 New in v2.1.0
+
+#### Model Explainability & Interpretability
+- **Grad-CAM** (Gradient-weighted Class Activation Mapping) for visual explanations
+- **Saliency Maps** showing pixel-level importance
+- **Integrated Gradients** for stable attribution
+- Framework-agnostic interface for PyTorch and TensorFlow
+- Automatic visualization overlays on original images
+
+#### Advanced Model Versioning & Experiment Tracking
+- Semantic versioning for models (major.minor.patch)
+- Complete experiment tracking with metadata and lineage
+- Model registry with stage promotion (development → staging → production)
+- Experiment comparison and version diffing
+- Parent-child relationships for model genealogy
+- Best model selection based on custom metrics
+
+#### Enterprise-Grade Security
+- **Rate Limiting** with sliding window algorithm and burst support
+- **API Key Management** with rotation, expiration, and permissions
+- **Request Signature Validation** using HMAC-SHA256
+- **IP Whitelisting/Blacklisting** for access control
+- **Security Audit Logging** with comprehensive event tracking
+- Protection against replay attacks and request tampering
+
+#### Model Compression & Optimization
+- **Quantization** (INT8, FP16) for PyTorch and TensorFlow
+- **Model Pruning** (structured and unstructured)
+- **Knowledge Distillation** for teacher-student training
+- **ONNX Export** with optimization
+- Model size reduction up to 4x with minimal accuracy loss
+- Inference speed benchmarking
+
+#### Production Monitoring & Alerting
+- **Real-time Metrics Collection** (Prometheus compatible)
+- **System Resource Monitoring** (CPU, GPU, memory, disk)
+- **Custom Alert Rules** with configurable thresholds
+- **Health Check Endpoints** with dependency verification
+- **Performance Profiling** and resource tracking
+- Automatic metric aggregation and visualization
+
+#### Data Versioning & Lineage Tracking
+- **Dataset Version Control** with semantic versioning
+- **Data Lineage Tracking** for full provenance
+- **Automatic Change Detection** with hash-based verification
+- **Dataset Comparison** and diff capabilities
+- **Quality Validation** with corrupt image detection
+- Stage promotion (raw → processed → validated → production)
+
+---
+
+### Core Features
+
+#### Automatic Dataset Analysis
 - Identifies classification, detection, or segmentation tasks automatically
 - Analyzes image dimensions, channels, class distribution, and data quality
 - Estimates training time and hardware requirements
 - Supports JPEG, PNG, BMP, TIFF, WebP, and ZIP/TAR/RAR/7Z archives up to 10 GB
 - Displays meaningful class names (e.g. "airplane", "cat") rather than generic labels
 
-### Intelligent Model Selection
+#### Intelligent Model Selection
 - Recommends the best architecture based on dataset characteristics
 - Supports PyTorch, TensorFlow/Keras, and Scikit-learn with a unified interface
 - Leverages pretrained models (ImageNet weights) for transfer learning
 - Manual model selection with real-time hyperparameter guidance
 
-### Zero-Configuration Training
+#### Zero-Configuration Training
 - Bayesian hyperparameter optimization via Optuna
 - Real-time training progress with interactive Plotly visualizations
 - Automatic callbacks: early stopping, LR scheduling, model checkpointing
 - Async job execution through Celery — training runs in the background
 
-### Authentication & Multi-User Support
+#### Authentication & Multi-User Support
 - JWT access + refresh token authentication
 - Role-based access control (user / admin)
 - User registration, login, token refresh, and logout endpoints
 - One-time bootstrap endpoint to promote the first admin
 
-### Production-Ready Inference
+#### Production-Ready Inference
 - Load trained PyTorch or TensorFlow models with full metadata
 - Export PyTorch models to ONNX for cross-platform deployment
 - Batch inference on directories of images
 - Confidence visualization and top-k predictions
 
-### REST API
+#### REST API
 - Full OpenAPI 3.0 documentation at `/docs` and `/redoc`
 - Endpoints for experiments, training jobs, models, inference, and auth
 - Async job submission — poll job status without blocking
 
-### Hugging Face Dataset Integration
+#### Hugging Face Dataset Integration
 - One-click access to CIFAR-10, Fashion-MNIST, Cats vs Dogs, Food-101, Indoor Scene, Oxford-IIIT Pet, ADE20K, and more
 - No authentication required; all datasets are publicly accessible
 
