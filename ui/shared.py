@@ -76,6 +76,16 @@ def save_test_samples_for_evaluation(
         import cv2
     except ImportError:
         raise ImportError("opencv-python is required: pip install opencv-python")
+    
+    # Skip sample generation for detection/segmentation tasks
+    task_type = getattr(dataset_info, "task_type", "classification")
+    if task_type in ["detection", "segmentation"]:
+        logger.info(
+            "⚠️ Skipping test sample generation for %s task. "
+            "Sample generation is only supported for classification tasks.",
+            task_type
+        )
+        return
 
     test_dir = os.path.join(output_dir, "test_samples")
     os.makedirs(test_dir, exist_ok=True)

@@ -4610,7 +4610,19 @@ def select_tensorflow_model(dataset_info, detected_channels):
     task_type = dataset_info.task_type
     num_classes = dataset_info.num_classes
     
-    # TensorFlow/Keras model recommendations by task (IMPROVED)
+    # ⚠️ IMPORTANT: TensorFlow only supports classification tasks
+    if task_type in ["detection", "segmentation"]:
+        error_msg = (
+            f"❌ TensorFlow/Keras framework only supports **classification** tasks.\n\n"
+            f"For **{task_type}** tasks, please use **PyTorch** framework which supports:\n"
+            f"- 🎯 Object Detection (YOLO, Faster R-CNN, etc.)\n"
+            f"- 🖼️ Semantic Segmentation (U-Net, DeepLabV3, etc.)\n\n"
+            f"Switch to PyTorch in the framework selector above."
+        )
+        st.error(error_msg)
+        raise ValueError(error_msg)
+    
+    # TensorFlow/Keras model recommendations for classification
     if task_type == "classification":
         if num_classes <= 10:
             # EfficientNet-B0 for small classification (better than Simple CNN)
@@ -4624,19 +4636,6 @@ def select_tensorflow_model(dataset_info, detected_channels):
             # ConvNeXt for large classification (modern architecture)
             architecture = "⚡ ConvNeXt-Tiny (Modern)"
             backbone = "convnext_tiny"
-    
-    elif task_type == "detection":
-        # TensorFlow does NOT support detection - should never reach here
-        # This will be caught by the trainer validation
-        architecture = "NOT_SUPPORTED"
-        backbone = "none"
-        
-    elif task_type == "segmentation":
-        # TensorFlow does NOT support segmentation - should never reach here
-        # This will be caught by the trainer validation
-        architecture = "NOT_SUPPORTED"
-        backbone = "none"
-    
     else:
         # Default classification
         architecture = "EfficientNet-B0"
@@ -4665,7 +4664,7 @@ def select_tensorflow_model(dataset_info, detected_channels):
             'dropout': 0.2,
             'activation': 'relu',
             'optimizer': 'adam',
-            'loss': 'sparse_categorical_crossentropy' if task_type == "classification" else 'mse'
+            'loss': 'sparse_categorical_crossentropy'
         }
     )
 
