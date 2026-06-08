@@ -195,6 +195,17 @@ def train_tensorflow(
 ) -> Dict[str, Any]:
     _mark_running(job_id, self.request.id)
     logger.info("[job=%s] Starting TensorFlow training. hyperparams=%s", job_id, hyperparams)
+    
+    # Validate task type - TensorFlow only supports classification
+    task_type = model_config.get("task_type", dataset_config.get("task_type", "classification"))
+    if task_type != "classification":
+        error_msg = (
+            f"❌ TensorFlow framework only supports classification tasks. "
+            f"Cannot train '{task_type}' task. Please use PyTorch framework for {task_type}."
+        )
+        logger.error("[job=%s] %s", job_id, error_msg)
+        _mark_failed(job_id, error_msg)
+        raise ValueError(error_msg)
 
     try:
         from core.tensorflow_trainer import TensorFlowTrainer
@@ -267,6 +278,17 @@ def train_sklearn(
 ) -> Dict[str, Any]:
     _mark_running(job_id, self.request.id)
     logger.info("[job=%s] Starting Sklearn training. hyperparams=%s", job_id, hyperparams)
+    
+    # Validate task type - Sklearn only supports classification  
+    task_type = model_config.get("task_type", dataset_config.get("task_type", "classification"))
+    if task_type != "classification":
+        error_msg = (
+            f"❌ Scikit-learn framework only supports classification tasks. "
+            f"Cannot train '{task_type}' task. Please use PyTorch framework for {task_type}."
+        )
+        logger.error("[job=%s] %s", job_id, error_msg)
+        _mark_failed(job_id, error_msg)
+        raise ValueError(error_msg)
 
     try:
         from core.sklearn_trainer import SklearnTrainer

@@ -229,6 +229,14 @@ class TensorFlowTrainer:
         try:
             self.logger.info(f"🏗️ Building {model_config['architecture']} model...")
             
+            # Check task type - TensorFlow only supports classification currently
+            task_type = getattr(self.config.dataset_info, 'task_type', 'classification')
+            if task_type != 'classification':
+                raise NotImplementedError(
+                    f"TensorFlow trainer currently only supports classification tasks. "
+                    f"For {task_type}, please use PyTorch framework."
+                )
+            
             input_shape = data_info['input_shape']
             num_classes = data_info['num_classes']
             

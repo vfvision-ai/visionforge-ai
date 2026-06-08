@@ -100,7 +100,8 @@ class ModelSelector:
                 'flops': 8700000000,
                 'memory_gb': 1.5,
                 'accuracy_score': 0.75,
-                'speed_score': 0.95
+                'speed_score': 0.95,
+                'map50': 37.3  # mAP@0.5 on COCO
             },
             'yolov8s': {
                 'backbone': 'yolov8s',
@@ -109,7 +110,8 @@ class ModelSelector:
                 'flops': 28600000000,
                 'memory_gb': 3.0,
                 'accuracy_score': 0.8,
-                'speed_score': 0.85
+                'speed_score': 0.85,
+                'map50': 44.9
             },
             'yolov8m': {
                 'backbone': 'yolov8m',
@@ -118,7 +120,18 @@ class ModelSelector:
                 'flops': 78900000000,
                 'memory_gb': 5.5,
                 'accuracy_score': 0.83,
-                'speed_score': 0.7
+                'speed_score': 0.7,
+                'map50': 50.2
+            },
+            'yolov8l': {
+                'backbone': 'yolov8l',
+                'num_parameters': 43700000,
+                'input_size': (640, 640),
+                'flops': 165200000000,
+                'memory_gb': 7.5,
+                'accuracy_score': 0.86,
+                'speed_score': 0.55,
+                'map50': 52.9
             },
             'faster_rcnn_r50': {
                 'backbone': 'resnet50',
@@ -127,7 +140,8 @@ class ModelSelector:
                 'flops': 134000000000,
                 'memory_gb': 8.0,
                 'accuracy_score': 0.85,
-                'speed_score': 0.4
+                'speed_score': 0.4,
+                'map50': 37.0
             },
             'detr_r50': {
                 'backbone': 'resnet50',
@@ -136,7 +150,8 @@ class ModelSelector:
                 'flops': 86000000000,
                 'memory_gb': 6.5,
                 'accuracy_score': 0.82,
-                'speed_score': 0.5
+                'speed_score': 0.5,
+                'map50': 42.0
             }
         }
         
@@ -261,10 +276,14 @@ class ModelSelector:
         )
     
     def _select_detection_model(self, dataset_info: DatasetInfo, framework: str = "pytorch") -> ModelConfig:
-        """Select detection model based on dataset characteristics."""
+        """Select detection model based on dataset characteristics with smart YOLO version selection."""
         
         best_model = None
         best_score = -1
+        
+        # Smart YOLO version selection based on dataset size
+        num_samples = dataset_info.num_samples
+        num_classes = dataset_info.num_classes
         
         # Adjust selection criteria for detection
         for model_name, model_info in self.detection_models.items():
@@ -272,11 +291,23 @@ class ModelSelector:
             accuracy_weight = 0.5
             speed_weight = 0.5
             
-            # Adjust based on dataset size and complexity
-            if dataset_info.num_samples < 500:
+            # Dataset-size based adjustments
+            if num_samples < 500:
                 speed_weight = 0.7  # Fast training for small datasets
                 accuracy_weight = 0.3
-            elif dataset_info.num_classes > 50:
+                # Prefer lighter models for small datasets
+                if 'yolov8l' in model_name:
+                    continue  # Skip heavy models
+            elif num_samples < 2000:
+                # Sweet spot: balanced models
+                if 'yolov8l' in model_name or 'faster_rcnn' in model_name:
+                    continue  # Skip heavy models
+            elif num_samples > 10000:
+                accuracy_weight = 0.7  # Better accuracy for large datasets
+                speed_weight = 0.3
+            
+            # Complexity-based adjustments
+            if num_classes > 50:
                 accuracy_weight = 0.7  # Better accuracy for complex datasets
                 speed_weight = 0.3
             
@@ -284,6 +315,10 @@ class ModelSelector:
                 model_info['accuracy_score'] * accuracy_weight +
                 model_info['speed_score'] * speed_weight
             )
+            
+            # Bonus for YOLO models (modern, well-supported)
+            if 'yolo' in model_name:
+                score *= 1.1
             
             if score > best_score:
                 best_score = score

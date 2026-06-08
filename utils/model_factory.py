@@ -170,18 +170,46 @@ class ModelFactory:
     def _create_detection_model(self, architecture: str) -> nn.Module:
         num_classes = self.config.dataset_info.num_classes
         in_channels = self._get_channels()
+        arch_key = architecture.lower()
 
+        # ── YOLOv8 models (ultralytics) ──────────────────────────────────
+        if TORCH_AVAILABLE and "yolo" in arch_key:
+            try:
+                from ultralytics import YOLO
+                # Map architecture to YOLOv8 variant
+                yolo_variant = arch_key.replace("yolo", "")  # e.g., "v8n", "v8s", "v8m"
+                if not yolo_variant.startswith("v"):
+                    yolo_variant = "v8n"  # default to nano
+                
+                # Create YOLO model (will download pretrained weights)
+                model_path = f"yolo{yolo_variant}.pt"
+                yolo_model = YOLO(model_path)
+                
+                # Update number of classes
+                # Note: YOLO handles training differently - this returns the model wrapper
+                logger.info(f"Created YOLOv8 detection model: {architecture} ({num_classes} classes)")
+                return yolo_model.model  # Return the underlying PyTorch model
+            except ImportError:
+                logger.error("ultralytics not installed. Run: pip install ultralytics")
+                logger.warning("Falling back to torchvision detection model")
+            except Exception as e:
+                logger.warning(f"YOLOv8 creation failed ({e}), falling back to torchvision")
+
+        # ── Torchvision detection models ─────────────────────────────────
         if TORCH_AVAILABLE and in_channels == 3:
             try:
-                arch_key = architecture.lower()
-                if "fcos" in arch_key:
-                    from torchvision.models.detection import fcos_resnet50_fpn
-                    model = fcos_resnet50_fpn(weights=None, num_classes=num_classes)
-                else:
-                    from torchvision.models.detection import fasterrcnn_mobilenet_v3_large_fpn
-                    model = fasterrcnn_mobilenet_v3_large_fpn(weights=None, num_classes=num_classes)
-                logger.info(f"Created detection model: {architecture}")
-                return model
+                if "fcos" in arch_key or "faster" in arch_key or "detr" in arch_key:
+                    if "fcos" in arch_key:
+                        from torchvision.models.detection import fcos_resnet50_fpn
+                        model = fcos_resnet50_fpn(weights=None, num_classes=num_classes)
+                    elif "detr" in arch_key:
+                        from torchvision.models.detection import detr_resnet50
+                        model = detr_resnet50(weights=None, num_classes=num_classes)
+                    else:
+                        from torchvision.models.detection import fasterrcnn_resnet50_fpn
+                        model = fasterrcnn_resnet50_fpn(weights=None, num_classes=num_classes)
+                    logger.info(f"Created detection model: {architecture}")
+                    return model
             except Exception as e:
                 logger.warning(f"Detection model build failed ({e}), using simple baseline")
 

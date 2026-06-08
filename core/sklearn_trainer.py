@@ -78,6 +78,14 @@ class SklearnTrainer:
     def prepare_data(self, dataset_info: DatasetInfo, validation_split: float = 0.2) -> Dict[str, Any]:
         """Prepare data for Scikit-learn training by extracting features from images."""
         try:
+            # Check task type - Sklearn only supports classification
+            task_type = getattr(dataset_info, 'task_type', 'classification')
+            if task_type != 'classification':
+                raise NotImplementedError(
+                    f"Scikit-learn trainer currently only supports classification tasks. "
+                    f"For {task_type}, please use PyTorch framework."
+                )
+            
             self.logger.info("🔄 Preparing Scikit-learn data with feature extraction...")
             
             # Extract features and labels from dataset
