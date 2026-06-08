@@ -83,6 +83,12 @@ def _build_config(
     )
 
 
+def _mark_failed(job_id: str, error_msg: str):
+    """Mark a job as failed in the database."""
+    with db_session() as db:
+        crud.fail_job(db, job_id, error=error_msg)
+
+
 def _safe_dataset_info(dataset_name: str, task_type: str, dataset_config: Dict[str, Any]):
     """Build a DatasetInfo from the dataset name, ignoring training-control keys."""
     from core.dataset_analyzer import DatasetInfo
@@ -152,25 +158,52 @@ def train_pytorch(
     logger.info("[job=%s] Starting PyTorch training. hyperparams=%s", job_id, hyperparams)
 
     try:
-        from core.trainer import AutoTrainer
-        from utils.callbacks import DBProgressCallback
-
         os.makedirs(output_dir, exist_ok=True)
 
         dataset_name = model_config.get("dataset_name", dataset_config.get("dataset_path", "MNIST"))
         task_type    = model_config.get("task_type", dataset_config.get("task_type", "classification"))
         ds_info = _safe_dataset_info(dataset_name, task_type, dataset_config)
         config  = _build_config(ds_info, model_config, hyperparams, output_dir)
+        
+        # ── Check if using YOLO with ultralytics pipeline ──
+        use_yolo = (
+            task_type == "detection" and 
+            "yolo" in model_config.get("architecture", "").lower() and
+            model_config.get("use_yolo_pipeline", False)
+        )
+        
+        if use_yolo:
+            # Use standard ultralytics YOLO pipeline
+            from core.yolo_trainer import YOLOTrainer
+            from utils.callbacks import DBProgressCallback
+            
+            yolo_variant = model_config.get("yolo_variant", "yolov8s")
+            logger.info(f"[job={job_id}] Using Ultralytics YOLO pipeline: {yolo_variant}")
+            
+            trainer = YOLOTrainer(config=config, yolo_variant=yolo_variant)
+            # Note: YOLOTrainer uses ultralytics internal callbacks
+            # DB progress updates handled differently
+            
+            results = trainer.train(save_model=True)
+            
+            # Normalize results format
+            results["model_path"] = str(results.get("model_path", ""))
+            results["log_path"] = str(config.output_dir / "train")
+            
+        else:
+            # Use standard PyTorch AutoTrainer
+            from core.trainer import AutoTrainer
+            from utils.callbacks import DBProgressCallback
 
-        trainer = AutoTrainer(config=config)
-        trainer.callback_manager.add_callback(DBProgressCallback(job_id))
-        result_obj = trainer.train()  # AutoTrainer.train() takes no args
+            trainer = AutoTrainer(config=config)
+            trainer.callback_manager.add_callback(DBProgressCallback(job_id))
+            result_obj = trainer.train()  # AutoTrainer.train() takes no args
 
-        # TrainingResults is a dataclass — normalise to plain dict
-        from dataclasses import asdict
-        results = asdict(result_obj)
-        results["model_path"] = str(results.get("model_path", ""))
-        results["log_path"]   = str(results.get("log_path", ""))
+            # TrainingResults is a dataclass — normalise to plain dict
+            from dataclasses import asdict
+            results = asdict(result_obj)
+            results["model_path"] = str(results.get("model_path", ""))
+            results["log_path"]   = str(results.get("log_path", ""))
 
         model_path = results.get("model_path", "")
         _mark_complete(job_id, results, model_path)

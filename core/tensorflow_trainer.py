@@ -224,7 +224,7 @@ class TensorFlowTrainer:
         )
         return data_info
 
-    def build_model(self, model_config: Dict[str, Any], data_info: Dict[str, Any]) -> keras.Model:
+    def build_model(self, model_config: Dict[str, Any], data_info: Dict[str, Any]):
         """Build TensorFlow/Keras model architecture."""
         try:
             self.logger.info(f"🏗️ Building {model_config['architecture']} model...")
@@ -279,7 +279,7 @@ class TensorFlowTrainer:
             self.logger.error(f"❌ Model building failed: {e}")
             raise
     
-    def _build_custom_cnn(self, input_shape: Tuple[int, ...], num_classes: int, config: Dict[str, Any]) -> keras.Model:
+    def _build_custom_cnn(self, input_shape: Tuple[int, ...], num_classes: int, config: Dict[str, Any]):
         """Build custom CNN architecture from user configuration."""
         self.logger.info("🏗️ Building custom CNN from user configuration...")
         
@@ -384,7 +384,7 @@ class TensorFlowTrainer:
         self.logger.info(f"✅ Custom CNN built with {len(conv_blocks)} conv blocks and {len(dense_layers)} dense layers")
         return model
     
-    def _build_sequential_cnn(self, input_shape: Tuple[int, ...], num_classes: int, config: Dict[str, Any]) -> keras.Model:
+    def _build_sequential_cnn(self, input_shape: Tuple[int, ...], num_classes: int, config: Dict[str, Any]):
         """Build a sequential CNN architecture."""
         model = keras.Sequential([
             layers.Input(shape=input_shape),
@@ -416,7 +416,7 @@ class TensorFlowTrainer:
         
         return model
     
-    def _build_resnet50(self, input_shape: Tuple[int, ...], num_classes: int, config: Dict[str, Any]) -> keras.Model:
+    def _build_resnet50(self, input_shape: Tuple[int, ...], num_classes: int, config: Dict[str, Any]):
         """Build ResNet50 architecture."""
         base_model = ResNet50(
             weights='imagenet' if input_shape[-1] == 3 else None,
@@ -433,7 +433,7 @@ class TensorFlowTrainer:
         
         return model
     
-    def _build_efficientnet(self, input_shape: Tuple[int, ...], num_classes: int, config: Dict[str, Any]) -> keras.Model:
+    def _build_efficientnet(self, input_shape: Tuple[int, ...], num_classes: int, config: Dict[str, Any]):
         """Build EfficientNet architecture."""
         base_model = EfficientNetB0(
             weights='imagenet' if input_shape[-1] == 3 else None,
@@ -450,7 +450,7 @@ class TensorFlowTrainer:
         
         return model
     
-    def _build_mobilenet(self, input_shape: Tuple[int, ...], num_classes: int, config: Dict[str, Any]) -> keras.Model:
+    def _build_mobilenet(self, input_shape: Tuple[int, ...], num_classes: int, config: Dict[str, Any]):
         """Build MobileNetV2 architecture."""
         base_model = MobileNetV2(
             weights='imagenet' if input_shape[-1] == 3 else None,
@@ -467,7 +467,7 @@ class TensorFlowTrainer:
         
         return model
     
-    def _build_vgg16(self, input_shape: Tuple[int, ...], num_classes: int, config: Dict[str, Any]) -> keras.Model:
+    def _build_vgg16(self, input_shape: Tuple[int, ...], num_classes: int, config: Dict[str, Any]):
         """Build VGG16 architecture."""
         base_model = VGG16(
             weights='imagenet' if input_shape[-1] == 3 else None,
@@ -484,7 +484,7 @@ class TensorFlowTrainer:
         
         return model
     
-    def _build_inception(self, input_shape: Tuple[int, ...], num_classes: int, config: Dict[str, Any]) -> keras.Model:
+    def _build_inception(self, input_shape: Tuple[int, ...], num_classes: int, config: Dict[str, Any]):
         """Build InceptionV3 architecture."""
         base_model = InceptionV3(
             weights='imagenet' if input_shape[-1] == 3 else None,

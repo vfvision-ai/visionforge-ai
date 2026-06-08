@@ -4565,8 +4565,14 @@ def get_framework_models(framework, task_type):
                 "🚀 EfficientNet-B0 (Recommended)", "📱 MobileNetV3-Small (Fast)", "⚡ RegNetY-002 (Balanced)",
                 "Simple CNN", "ResNet50", "ResNet101", "EfficientNet-B3", "VGG16", "DenseNet121", "MobileNetV2"
             ],
-            "detection": ["YOLO-v5", "Faster R-CNN", "SSD", "RetinaNet"],
-            "segmentation": ["U-Net", "DeepLabV3", "FCN", "PSPNet"]
+            "detection": [
+                "🎯 YOLOv8n (Nano - 3.2M params, fastest)",
+                "🎯 YOLOv8s (Small - 11.2M params, balanced)", 
+                "🎯 YOLOv8m (Medium - 25.9M params, recommended)",
+                "🎯 YOLOv8l (Large - 43.7M params, high accuracy)",
+                "Faster R-CNN ResNet50", "FCOS ResNet50", "DETR ResNet50"
+            ],
+            "segmentation": ["U-Net", "DeepLabV3 ResNet50", "FCN ResNet50", "SegFormer"]
         },
         "TensorFlow/Keras": {
             "classification": [
@@ -4574,8 +4580,8 @@ def get_framework_models(framework, task_type):
                 "⚡ RegNetY-002 (Balanced)", "⚡ ConvNeXt-Tiny (Modern)",
                 "MobileNetV2", "ResNet50", "ResNet101", "VGG16", "InceptionV3"
             ],
-            "detection": ["YOLO-TensorFlow", "SSD-MobileNet", "Faster R-CNN", "CenterNet"],
-            "segmentation": ["U-Net", "DeepLabV3+", "Mask R-CNN", "FCN"]
+            "detection": [],  # Not supported - use PyTorch for detection
+            "segmentation": []  # Not supported - use PyTorch for segmentation
         },
         "Scikit-learn": {
             "classification": [
@@ -4589,15 +4595,8 @@ def get_framework_models(framework, task_type):
                 "Multi-layer Perceptron", "Neural Network",
                 "Quadratic Discriminant", "Linear Discriminant"
             ],
-            "detection": [
-                "HOG + SVM", "Feature Extraction + Random Forest", 
-                "Local Binary Pattern + SVM", "SIFT + KMeans + SVM",
-                "Histogram Features + Gradient Boosting"
-            ],
-            "segmentation": [
-                "Watershed + Features", "K-Means Clustering", "Gaussian Mixture",
-                "Spectral Clustering", "DBSCAN + Features", "Mean Shift"
-            ]
+            "detection": [],  # Not supported - use PyTorch for detection
+            "segmentation": []  # Not supported - use PyTorch for segmentation
         }
     }
     
@@ -4627,14 +4626,16 @@ def select_tensorflow_model(dataset_info, detected_channels):
             backbone = "convnext_tiny"
     
     elif task_type == "detection":
-        # Object detection models
-        architecture = "YOLO-TensorFlow"
-        backbone = "darknet"
+        # TensorFlow does NOT support detection - should never reach here
+        # This will be caught by the trainer validation
+        architecture = "NOT_SUPPORTED"
+        backbone = "none"
         
     elif task_type == "segmentation":
-        # Semantic segmentation models
-        architecture = "U-Net"
-        backbone = "unet"
+        # TensorFlow does NOT support segmentation - should never reach here
+        # This will be caught by the trainer validation
+        architecture = "NOT_SUPPORTED"
+        backbone = "none"
     
     else:
         # Default classification

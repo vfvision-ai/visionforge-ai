@@ -284,6 +284,23 @@ def show_model_selection():
             # Framework-specific model options
             available_models = get_framework_models(framework, dataset_info.task_type)
             
+            # ── Show warning if framework doesn't support this task type ──
+            if not available_models:
+                st.error(
+                    f"❌ **{framework}** does not support **{dataset_info.task_type}** tasks.\n\n"
+                    f"**Solution:** Switch to **PyTorch** framework which supports all task types:\n"
+                    f"- ✅ Classification\n"
+                    f"- ✅ Object Detection (YOLOv8n/s/m/l, Faster R-CNN, FCOS, DETR)\n"
+                    f"- ✅ Segmentation (U-Net, DeepLabV3, FCN, SegFormer)"
+                )
+                st.warning(
+                    "📚 **Framework Support Matrix:**\n\n"
+                    "- **PyTorch**: Classification, Detection, Segmentation ✅\n"
+                    "- **TensorFlow**: Classification only ⚠️\n"
+                    "- **Scikit-learn**: Classification only ⚠️"
+                )
+                return
+            
             if available_models:
                 # Model architecture selection
                 manual_model = st.selectbox(
@@ -291,6 +308,116 @@ def show_model_selection():
                     available_models,
                     help=f"Available {dataset_info.task_type} models. The backbone architecture will automatically match your selection."
                 )
+                
+                # ── YOLO Version Selection (for detection tasks) ──
+                yolo_variant = None
+                use_yolo_pipeline = False
+                
+                if dataset_info.task_type == "detection" and "YOLO" in manual_model:
+                    st.markdown("---")
+                    st.markdown("### 🎯 YOLO Configuration")
+                    
+                    yolo_guide = {
+                        "YOLOv8n (Nano)": {
+                            "variant": "yolov8n",
+                            "params": "3.2M", 
+                            "speed": "⚡⚡⚡⚡⚡", 
+                            "map": "37.3%", 
+                            "use": "Edge devices, real-time on CPU"
+                        },
+                        "YOLOv8s (Small)": {
+                            "variant": "yolov8s",
+                            "params": "11.2M", 
+                            "speed": "⚡⚡⚡⚡", 
+                            "map": "44.9%", 
+                            "use": "Best balance, production use"
+                        },
+                        "YOLOv8m (Medium)": {
+                            "variant": "yolov8m",
+                            "params": "25.9M", 
+                            "speed": "⚡⚡⚡", 
+                            "map": "50.2%", 
+                            "use": "High accuracy, GPU recommended"
+                        },
+                        "YOLOv8l (Large)": {
+                            "variant": "yolov8l",
+                            "params": "43.7M", 
+                            "speed": "⚡⚡", 
+                            "map": "52.9%", 
+                            "use": "Maximum accuracy, large datasets"
+                        },
+                        "YOLOv8x (Extra Large)": {
+                            "variant": "yolov8x",
+                            "params": "68.2M", 
+                            "speed": "⚡", 
+                            "map": "53.9%", 
+                            "use": "Research, maximum accuracy"
+                        }
+                    }
+                    
+                    # Auto-suggest based on dataset size
+                    num_samples = getattr(dataset_info, 'num_samples', 1000)
+                    if num_samples < 500:
+                        suggested_idx = 0  # YOLOv8n
+                    elif num_samples < 2000:
+                        suggested_idx = 1  # YOLOv8s
+                    elif num_samples < 5000:
+                        suggested_idx = 2  # YOLOv8m
+                    elif num_samples < 10000:
+                        suggested_idx = 3  # YOLOv8l
+                    else:
+                        suggested_idx = 3  # YOLOv8l for large datasets
+                    
+                    # Extract pre-selected variant from model name if available
+                    default_idx = suggested_idx
+                    for idx, (name, info) in enumerate(yolo_guide.items()):
+                        if info['variant'] in manual_model.lower():
+                            default_idx = idx
+                            break
+                    
+                    selected_yolo_name = st.selectbox(
+                        "🔧 Select YOLO Variant:",
+                        list(yolo_guide.keys()),
+                        index=default_idx,
+                        help="Choose YOLO variant based on your speed/accuracy requirements"
+                    )
+                    
+                    selected_info = yolo_guide[selected_yolo_name]
+                    yolo_variant = selected_info['variant']
+                    
+                    # Show specifications
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Parameters", selected_info['params'])
+                    with col2:
+                        st.metric("Speed", selected_info['speed'])
+                    with col3:
+                        st.metric("mAP@0.5", selected_info['map'])
+                    with col4:
+                        st.metric("Dataset", f"{num_samples:,} samples")
+                    
+                    st.info(
+                        f"💡 **Best for:** {selected_info['use']}\n\n"
+                        f"📚 Uses the **official Ultralytics YOLO pipeline** with standard training API."
+                    )
+                    
+                    # Option to use ultralytics pipeline
+                    use_yolo_pipeline = st.checkbox(
+                        "✅ Use Ultralytics YOLO Pipeline (Recommended)",
+                        value=True,
+                        help="Uses the standard ultralytics training API. Provides better performance and compatibility."
+                    )
+                    
+                    if not use_yolo_pipeline:
+                        st.warning(
+                            "⚠️ Using custom PyTorch pipeline. "
+                            "For best results with YOLO, keep the Ultralytics pipeline enabled."
+                        )
+                
+                # Store YOLO config in session
+                if yolo_variant:
+                    st.session_state.yolo_variant = yolo_variant
+                    st.session_state.use_yolo_pipeline = use_yolo_pipeline
                 
                 # Custom CNN Builder Configuration (TensorFlow only)
                 custom_cnn_config = None
@@ -1131,6 +1258,11 @@ def show_model_selection():
                         }
                         # Store input size as (channels, width, height) for backward compatibility
                         full_input_size = (input_channels, input_size[0], input_size[1]) if input_channels and input_size[0] is not None else (3, 224, 224)
+                    
+                    # Add YOLO configuration if applicable
+                    if dataset_info.task_type == "detection" and "YOLO" in manual_model:
+                        custom_config_params['yolo_variant'] = st.session_state.get('yolo_variant', 'yolov8s')
+                        custom_config_params['use_yolo_pipeline'] = st.session_state.get('use_yolo_pipeline', True)
                     
                     model_config = ModelConfig(
                         architecture=manual_model,
