@@ -41,7 +41,7 @@ app = FastAPI(
         "Programmatically submit training jobs, track experiments, "
         "and integrate with your CI/CD or MLOps workflows."
     ),
-    version="2.0.0",
+    version="2.2.0",
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",

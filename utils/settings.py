@@ -14,7 +14,7 @@ class Settings:
     
     # Application
     APP_NAME: str = config('APP_NAME', default='VisionForge')
-    APP_VERSION: str = config('APP_VERSION', default='2.0.0')
+    APP_VERSION: str = config('APP_VERSION', default='2.2.0')
     ENVIRONMENT: str = config('ENVIRONMENT', default='development')
     DEBUG: bool = config('DEBUG', default=False, cast=bool)
     

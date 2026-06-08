@@ -498,7 +498,12 @@ class ABTestManager:
                     }
         
         # Perform statistical comparison
-        from scipy import stats
+        try:
+            from scipy import stats
+        except ImportError:
+            raise ImportError(
+                "scipy is required for A/B testing. Install it with: pip install scipy>=1.9.0"
+            )
         import numpy as np
         
         variant_results = {}
@@ -635,7 +640,12 @@ class ModelEnsemble:
             return weighted_sum / total_weight
         
         elif self.ensemble_method == 'voting':
-            from scipy import stats
+            try:
+                from scipy import stats
+            except ImportError:
+                raise ImportError(
+                    "scipy is required for voting ensemble. Install it with: pip install scipy>=1.9.0"
+                )
             import numpy as np
             # Majority voting
             predictions_array = np.array(predictions)

@@ -120,7 +120,12 @@ class DataDriftDetector:
         Returns:
             Drift report
         """
-        from scipy import stats
+        try:
+            from scipy import stats
+        except ImportError:
+            raise ImportError(
+                "scipy is required for drift detection. Install it with: pip install scipy>=1.9.0"
+            )
         
         if self.reference_data is None:
             raise ValueError("Reference data not set")

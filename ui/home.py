@@ -131,7 +131,7 @@ def _show_dashboard():
     hero(
         f"{t['icon']} {task} Pipeline",
         t["desc"],
-        badges=["🔭 VisionForge", f"🎯 {task}", "v2.0"],
+        badges=["🔭 VisionForge", f"🎯 {task}", "v2.2.0"],
     )
     step_tracker(["Home", "Dataset", "Model", "Training", "Results"],
                  st.session_state.get("current_step", 0))

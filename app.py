@@ -16,7 +16,7 @@ try:
         menu_items={
             "Get Help": None,
             "Report a bug": None,
-            "About": "**VisionForge** · v2.0 · Train Vision Models Effortlessly",
+            "About": "**VisionForge** · v2.2.0 · Train Vision Models Effortlessly",
         },
     )
 except st.errors.StreamlitAPIException:
@@ -196,7 +196,7 @@ def _render_sidebar():
            -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">
         VisionForge
       </div>
-      <div style="font-size:0.69rem;color:#505068;margin-top:.15rem">v2.0 · Train Vision Models Effortlessly</div>
+      <div style="font-size:0.69rem;color:#505068;margin-top:.15rem">v2.2.0 · Train Vision Models Effortlessly</div>
     </div>
     <hr style="border:none;border-top:1px solid rgba(255,255,255,.06);margin:.4rem 0 .6rem">
     """, unsafe_allow_html=True)
