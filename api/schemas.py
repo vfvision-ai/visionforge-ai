@@ -144,13 +144,37 @@ class UserRegister(BaseModel):
     full_name: str = Field(..., min_length=1, max_length=255)
     password: str  = Field(..., min_length=8, max_length=128)
 
+    @field_validator("email")
+    @classmethod
+    def validate_email_domain(cls, v: str) -> str:
+        """Reject obviously invalid / malformed domains (e.g. no TLD)."""
+        parts = v.split("@")
+        if len(parts) != 2:
+            raise ValueError("Invalid email address.")
+        domain = parts[1]
+        if "." not in domain:
+            raise ValueError("Email domain must contain a valid TLD (e.g. example.com).")
+        tld = domain.rsplit(".", 1)[-1]
+        if len(tld) < 2:
+            raise ValueError("Email TLD must be at least 2 characters.")
+        return v.lower()
+
     @field_validator("password")
     @classmethod
     def password_strength(cls, v: str) -> str:
+        errors = []
+        if len(v) < 8:
+            errors.append("at least 8 characters")
         if not any(c.isdigit() for c in v):
-            raise ValueError("Password must contain at least one digit.")
-        if not any(c.isalpha() for c in v):
-            raise ValueError("Password must contain at least one letter.")
+            errors.append("at least one digit (0-9)")
+        if not any(c.islower() for c in v):
+            errors.append("at least one lowercase letter")
+        if not any(c.isupper() for c in v):
+            errors.append("at least one uppercase letter")
+        if not any(c in r"!@#$%^&*()_+-=[]{}|;':\",./<>?" for c in v):
+            errors.append("at least one special character (!@#$%^&* etc.)")
+        if errors:
+            raise ValueError("Password must contain: " + ", ".join(errors) + ".")
         return v
 
 

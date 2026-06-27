@@ -88,16 +88,55 @@ def register(payload: UserRegister, db: Session = Depends(get_db)):
 @router.post("/login", response_model=TokenResponse, summary="Obtain JWT tokens")
 def login(payload: UserLogin, db: Session = Depends(get_db)):
     user = auth_crud.get_user_by_email(db, payload.email)
+
+    # Check account lockout before doing any password work
+    if user and auth_crud.is_account_locked(user):
+        remaining = auth_crud.lockout_remaining_seconds(user)
+        mins = remaining // 60
+        secs = remaining % 60
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                f"Account temporarily locked due to too many failed attempts. "
+                f"Try again in {mins}m {secs}s."
+            ),
+        )
+
     if not user or not auth_utils.verify_password(payload.password, user.hashed_password):
+        # Increment failure counter (only when the user actually exists, to avoid
+        # leaking whether the email is registered via different error messages)
+        if user:
+            auth_crud.increment_failed_logins(db, user)
+            db.commit()
+            remaining_attempts = max(
+                0,
+                auth_crud.MAX_FAILED_ATTEMPTS - (user.failed_login_attempts or 0),
+            )
+            if auth_crud.is_account_locked(user):
+                detail = (
+                    "Account locked after too many failed attempts. "
+                    f"Try again in {auth_crud.LOCKOUT_DURATION_MINUTES} minutes."
+                )
+            else:
+                detail = (
+                    f"Incorrect email or password. "
+                    f"{remaining_attempts} attempt(s) remaining before lockout."
+                )
+        else:
+            detail = "Incorrect email or password."
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password.",
+            detail=detail,
         )
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is disabled. Contact an administrator.",
         )
+
+    # Successful login — reset failure counter
+    auth_crud.reset_failed_logins(db, user)
     auth_crud.update_last_login(db, user)
     db.commit()
     access_token  = auth_utils.create_access_token(user.id, user.email, user.role.value)

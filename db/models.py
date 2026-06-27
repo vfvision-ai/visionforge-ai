@@ -157,14 +157,17 @@ class User(Base):
     """Registered user with email + hashed password."""
     __tablename__ = "users"
 
-    id             = Column(String, primary_key=True, default=_uuid)
-    email          = Column(String(255), unique=True, nullable=False, index=True)
-    full_name      = Column(String(255), nullable=False, default="")
-    hashed_password= Column(String(255), nullable=False)
-    role           = Column(SAEnum(UserRole), default=UserRole.USER, nullable=False)
-    is_active      = Column(Boolean, default=True, nullable=False)
-    created_at     = Column(DateTime, default=datetime.utcnow)
-    last_login_at  = Column(DateTime, nullable=True)
+    id                     = Column(String, primary_key=True, default=_uuid)
+    email                  = Column(String(255), unique=True, nullable=False, index=True)
+    full_name              = Column(String(255), nullable=False, default="")
+    hashed_password        = Column(String(255), nullable=False)
+    role                   = Column(SAEnum(UserRole), default=UserRole.USER, nullable=False)
+    is_active              = Column(Boolean, default=True, nullable=False)
+    created_at             = Column(DateTime, default=datetime.utcnow)
+    last_login_at          = Column(DateTime, nullable=True)
+    # Brute-force protection
+    failed_login_attempts  = Column(Integer, default=0, nullable=False)
+    locked_until           = Column(DateTime, nullable=True)
 
     def __repr__(self):
         return f"<User id={self.id!r} email={self.email!r} role={self.role!r}>"

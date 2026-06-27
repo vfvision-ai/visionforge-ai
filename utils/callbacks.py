@@ -279,7 +279,7 @@ class LearningRateMonitor(Callback):
     def __init__(self):
         self.lr_history = []
     
-    def on_epoch_end(self, epoch: int, metrics: Dict[str, float]):
+    def on_epoch_end(self, epoch: int, metrics: Dict[str, float], logs=None):
         # Get current learning rate (implementation depends on optimizer)
         pass
 

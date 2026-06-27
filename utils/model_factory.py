@@ -243,6 +243,9 @@ class ModelFactory:
                         [int(t['labels'][0]) if len(t['labels']) > 0 else 0 for t in targets],
                         dtype=torch.long, device=device,
                     )
+                    # Clamp to valid class range [0, n_cls-1] to avoid IndexError
+                    # (detection datasets often use 1-based labels with 0=background)
+                    cls_tgts = cls_tgts.clamp(0, self.n_cls - 1)
                     loss_cls = F.cross_entropy(cls_logits, cls_tgts)
                     # Regression: pull predicted box toward GT box of first object
                     # (normalised to [0,1] by dividing by image W/H)

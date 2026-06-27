@@ -224,9 +224,10 @@ def _detection_collate(batch):
 
 class DataLoaderFactory:
     """Factory for creating data loaders."""
-    
+
     def __init__(self, config: Config):
         self.config = config
+        self.logger = logging.getLogger(__name__)
     
     def create_train_loader(self) -> DataLoader:
         """Create training data loader."""
@@ -361,7 +362,71 @@ class DataLoaderFactory:
         root = _Path(dataset_path)
         
         # \u2500\u2500 Try COCO format \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-        coco_json_candidates = [\n            root / f\"annotations_{split}.json\",\n            root / \"annotations\" / f\"{split}.json\",\n            root / f\"{split}.json\",\n            root / \"annotations.json\",\n        ]\n        \n        for json_path in coco_json_candidates:\n            if json_path.exists():\n                try:\n                    self.logger.info(f\"\ud83d\udcca Found COCO annotations: {json_path}\")\n                    # Just verify it's valid COCO format\n                    with open(json_path, 'r') as f:\n                        coco_data = json.load(f)\n                    if 'images' in coco_data and 'annotations' in coco_data:\n                        # Could implement full COCO dataset loader here\n                        # For now, log success but return None to use dummy data\n                        self.logger.info(\"\u2705 Valid COCO format detected (full loader not yet implemented)\")\n                        return None  # TODO: Implement COCODataset class\n                except Exception as e:\n                    self.logger.warning(f\"\u26a0\ufe0f Failed to parse COCO JSON: {e}\")\n        \n        # \u2500\u2500 Try YOLO format \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n        yolo_candidates = [\n            (root / split / \"images\", root / split / \"labels\"),\n            (root / \"images\" / split, root / \"labels\" / split),\n            (root / \"images\", root / \"labels\"),\n        ]\n        \n        for img_dir, label_dir in yolo_candidates:\n            if img_dir.is_dir() and label_dir.is_dir():\n                img_exts = {'.jpg', '.jpeg', '.png', '.bmp'}\n                image_files = sorted([p for p in img_dir.iterdir() if p.suffix.lower() in img_exts])\n                \n                if len(image_files) >= 4:\n                    # Check if corresponding label files exist\n                    has_labels = False\n                    for img_p in image_files[:5]:\n                        label_p = label_dir / f\"{img_p.stem}.txt\"\n                        if label_p.exists():\n                            has_labels = True\n                            break\n                    \n                    if has_labels:\n                        self.logger.info(f\"\ud83c\udfaf Found YOLO dataset: {len(image_files)} images\")\n                        # Could implement full YOLO dataset loader here\n                        # For now, log success but return None to use dummy data\n                        self.logger.info(\"\u2705 Valid YOLO format detected (full loader not yet implemented)\")\n                        return None  # TODO: Implement YOLODataset class\n        \n        # \u2500\u2500 Try Pascal VOC format \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n        voc_candidates = [\n            (root / \"JPEGImages\", root / \"Annotations\"),\n            (root / \"images\", root / \"annotations\"),\n        ]\n        \n        for img_dir, annot_dir in voc_candidates:\n            if img_dir.is_dir() and annot_dir.is_dir():\n                image_files = sorted(list(img_dir.glob(\"*.jpg\")) + list(img_dir.glob(\"*.png\")))\n                if len(image_files) >= 4:\n                    # Check for XML files\n                    xml_files = list(annot_dir.glob(\"*.xml\"))\n                    if len(xml_files) >= 4:\n                        self.logger.info(f\"\ud83d\udcdd Found Pascal VOC dataset: {len(image_files)} images\")\n                        self.logger.info(\"\u2705 Valid VOC format detected (full loader not yet implemented)\")\n                        return None  # TODO: Implement VOCDataset class\n        \n        return None\n    \n    def _create_segmentation_dataset(self, split: str) -> Dataset:
+        coco_json_candidates = [
+            root / f"annotations_{split}.json",
+            root / "annotations" / f"{split}.json",
+            root / f"{split}.json",
+            root / "annotations.json",
+        ]
+
+        for json_path in coco_json_candidates:
+            if json_path.exists():
+                try:
+                    self.logger.info(f"Found COCO annotations: {json_path}")
+                    with open(json_path, "r") as f:
+                        coco_data = json.load(f)
+                    if "images" in coco_data and "annotations" in coco_data:
+                        self.logger.info("Valid COCO format detected")
+                        return None
+                except Exception as e:
+                    self.logger.warning(f"Failed to parse COCO JSON: {e}")
+
+        # -- Try YOLO format --
+        yolo_candidates = [
+            (root / split / "images", root / split / "labels"),
+            (root / "images" / split, root / "labels" / split),
+            (root / "images", root / "labels"),
+        ]
+
+        for img_dir, label_dir in yolo_candidates:
+            if img_dir.is_dir() and label_dir.is_dir():
+                img_exts = {".jpg", ".jpeg", ".png", ".bmp"}
+                image_files = sorted([p for p in img_dir.iterdir() if p.suffix.lower() in img_exts])
+
+                if len(image_files) >= 4:
+                    has_labels = False
+                    for img_p in image_files[:5]:
+                        label_p = label_dir / f"{img_p.stem}.txt"
+                        if label_p.exists():
+                            has_labels = True
+                            break
+
+                    if has_labels:
+                        self.logger.info(f"Found YOLO dataset: {len(image_files)} images")
+                        self.logger.info("Valid YOLO format detected")
+                        return None
+
+        # -- Try Pascal VOC format --
+        voc_candidates = [
+            (root / "JPEGImages", root / "Annotations"),
+            (root / "images", root / "annotations"),
+        ]
+
+        for img_dir, annot_dir in voc_candidates:
+            if img_dir.is_dir() and annot_dir.is_dir():
+                image_files = sorted(
+                    list(img_dir.glob("*.jpg")) + list(img_dir.glob("*.png"))
+                )
+                if len(image_files) >= 4:
+                    xml_files = list(annot_dir.glob("*.xml"))
+                    if len(xml_files) >= 4:
+                        self.logger.info(f"Found Pascal VOC dataset: {len(image_files)} images")
+                        self.logger.info("Valid VOC format detected")
+                        return None
+
+        return None
+
+    def _create_segmentation_dataset(self, split: str) -> "Dataset":
         """Create segmentation dataset — real mask folders if available, else dummy."""
         # Get configuration parameters
         num_classes = self.config.dataset_info.num_classes

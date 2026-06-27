@@ -276,11 +276,20 @@ class AutoTrainer:
             EarlyStopping, ModelCheckpoint, LearningRateMonitor,
             ProgressBar, MetricsLogger
         )
-        
+
+        # Pick the right metric to monitor based on task type
+        task_type = self.config.dataset_info.task_type
+        if task_type == "detection":
+            monitor_metric = "val_map50"
+        elif task_type == "segmentation":
+            monitor_metric = "val_miou"
+        else:
+            monitor_metric = "val_acc"
+
         # Early stopping
         self.callback_manager.add_callback(
             EarlyStopping(
-                monitor='val_acc',
+                monitor=monitor_metric,
                 patience=self.config.early_stopping_patience,
                 min_delta=0.001,
                 mode='max'
@@ -324,7 +333,7 @@ class AutoTrainer:
         self.callback_manager.add_callback(
             ModelCheckpoint(
                 filepath=self.intelligent_model_path,
-                monitor='val_acc',
+                monitor=monitor_metric,
                 save_best_only=True,
                 mode='max'
             )
@@ -543,7 +552,8 @@ class AutoTrainer:
                 self.best_metric = miou
         elif self.config.dataset_info.task_type == "detection" and det_preds_all:
             det_result = compute_detection_metrics(det_preds_all, det_targets_all, iou_threshold=0.5)
-            map50 = det_result.get('mAP@50', 0.0)
+            # Returns (map50, per_class_ap) tuple
+            map50 = det_result[0] if isinstance(det_result, tuple) else det_result.get('mAP@50', 0.0)
             metrics['val_map50']   = map50
             metrics['val_accuracy'] = map50  # compatibility alias
             self.logger.info(f"✅ Validation - Loss: {metrics['val_loss']:.6f}, mAP@50: {map50:.4f} ({map50*100:.2f}%)")
