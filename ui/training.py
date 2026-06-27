@@ -66,19 +66,50 @@ def show_training():
         if acc <= 1:
             acc *= 100
 
-        st.markdown("""
+        # Determine task-aware metric labels
+        di = st.session_state.get('dataset_info')
+        _task = getattr(di, 'task_type', 'classification') if di else 'classification'
+        if _task == 'detection':
+            acc_label = "Best mAP@50"
+            acc_icon  = "🎯"
+        elif _task == 'segmentation':
+            acc_label = "Best mIoU"
+            acc_icon  = "🗺️"
+        else:
+            acc_label = "Best Accuracy"
+            acc_icon  = "🏆"
+
+        st.markdown(f"""
         <div style="background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.3);
-             border-radius:12px;padding:1rem 1.6rem;margin-bottom:1.2rem">
-          <div style="font-weight:700;font-size:1.1rem;color:#00d4aa">✅ Training Complete</div>
+             border-radius:12px;padding:1rem 1.6rem;margin-bottom:1.2rem;display:flex;align-items:center;gap:.8rem">
+          <span style="font-size:1.5rem">{acc_icon}</span>
+          <div>
+            <div style="font-weight:700;font-size:1.1rem;color:#00d4aa">✅ Training Complete</div>
+            <div style="font-size:.83rem;color:#a0a0b8;margin-top:.15rem">Task: <b style="color:#e2e8f0">{_task.title()}</b></div>
+          </div>
         </div>
         """, unsafe_allow_html=True)
 
-        stat_row([
-            (f"{acc:.2f}%",                          "Best Accuracy"),
-            (f"{results.get('best_loss', 0):.4f}",   "Best Loss"),
+        # Extra task-specific metrics from results
+        _miou  = results.get('val_miou',  results.get('best_miou'))
+        _dice  = results.get('val_dice',  results.get('best_dice'))
+        _map50 = results.get('val_map50', results.get('best_map50'))
+
+        _stat_items = [
+            (f"{acc:.2f}%", acc_label),
+            (f"{results.get('best_loss', 0):.4f}", "Best Loss"),
             (f"{results.get('training_time', 0):.0f}s", "Training Time"),
-            (str(results.get('total_epochs', '—')),  "Epochs Run"),
-        ])
+            (str(results.get('total_epochs', '—')), "Epochs Run"),
+        ]
+        # Append task-specific secondary metric
+        if _task == 'segmentation' and _dice is not None:
+            d = _dice * 100 if _dice <= 1 else _dice
+            _stat_items.append((f"{d:.2f}%", "Best Dice"))
+        elif _task == 'detection' and _map50 is not None:
+            p = _map50 * 100 if _map50 <= 1 else _map50
+            _stat_items.append((f"{p:.2f}%", "mAP@50"))
+
+        stat_row(_stat_items[:5])
 
         # ── Training curves from log_history ────────────────────────────────
         log_hist = st.session_state.get("training_log_history", [])
@@ -124,20 +155,35 @@ def show_training():
                 )
                 st.plotly_chart(fig_l, use_container_width=True, config={"displayModeBar": False})
             with ch2:
+                # Pick the right metric series + axis label for each task type
+                _th = results.get("training_history", {}) or {}
+                if _task == "segmentation":
+                    _t_m  = [v * 100 for v in _th.get("train_miou", [])] or t_acc_vals
+                    _v_m  = [v * 100 for v in _th.get("val_miou",   [])] or val_acc_vals
+                    _t_lbl, _v_lbl, _y_lbl = "Train mIoU", "Val mIoU", "mIoU %"
+                elif _task == "detection":
+                    _t_m  = [v * 100 for v in _th.get("train_map50", [])] or t_acc_vals
+                    _v_m  = [v * 100 for v in _th.get("val_map50",   [])] or val_acc_vals
+                    _t_lbl, _v_lbl, _y_lbl = "Train mAP@50", "Val mAP@50", "mAP@50 %"
+                else:
+                    _t_m  = t_acc_vals
+                    _v_m  = val_acc_vals
+                    _t_lbl, _v_lbl, _y_lbl = "Train Acc", "Val Acc", "Accuracy %"
+
                 fig_a = go.Figure()
-                if t_acc_vals:
-                    fig_a.add_trace(go.Scatter(x=epochs_x, y=t_acc_vals, mode="lines",
-                        name="Train Acc", line=dict(color="#00d4aa", width=2)))
-                if val_acc_vals:
-                    fig_a.add_trace(go.Scatter(x=epochs_x, y=val_acc_vals, mode="lines",
-                        name="Val Acc", line=dict(color="#ffd93d", width=2, dash="dash")))
+                if _t_m:
+                    fig_a.add_trace(go.Scatter(x=epochs_x, y=_t_m, mode="lines",
+                        name=_t_lbl, line=dict(color="#00d4aa", width=2)))
+                if _v_m:
+                    fig_a.add_trace(go.Scatter(x=epochs_x, y=_v_m, mode="lines",
+                        name=_v_lbl, line=dict(color="#ffd93d", width=2, dash="dash")))
                 fig_a.update_layout(
-                    title="Accuracy", template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)",
-                    plot_bgcolor="rgba(0,0,0,0)", height=260,
+                    title=_y_lbl.replace(" %", ""), template="plotly_dark",
+                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=260,
                     margin=dict(l=0, r=0, t=30, b=0),
                     legend=dict(orientation="h", y=-0.2),
-                    xaxis=dict(title="Epoch",     gridcolor="rgba(255,255,255,.06)"),
-                    yaxis=dict(title="Accuracy %", gridcolor="rgba(255,255,255,.06)"),
+                    xaxis=dict(title="Epoch",  gridcolor="rgba(255,255,255,.06)"),
+                    yaxis=dict(title=_y_lbl,   gridcolor="rgba(255,255,255,.06)"),
                 )
                 st.plotly_chart(fig_a, use_container_width=True, config={"displayModeBar": False})
 

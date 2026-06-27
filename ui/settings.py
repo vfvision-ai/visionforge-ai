@@ -36,9 +36,69 @@ def show_settings():
     )
 
     # Tabbed layout for cleaner organisation
-    tab_hw, tab_models, tab_export = st.tabs(
-        ["💻 Hardware & Logging", "📦 Model Management", "📤 Export & Deploy"]
+    tab_qs, tab_hw, tab_models, tab_export = st.tabs(
+        ["🚀 Quick Start", "💻 Hardware & Logging", "📦 Model Management", "📤 Export & Deploy"]
     )
+
+    with tab_qs:
+        section("🚀", "Quick Start Guide")
+        st.markdown(
+            '<p style="color:var(--text-secondary);font-size:.9rem;margin-bottom:1.2rem">'
+            "New here? Follow these steps to train and deploy your first computer vision model."
+            "</p>",
+            unsafe_allow_html=True,
+        )
+
+        _steps = [
+            ("1️⃣", "Analyse Your Dataset",
+             "Go to <b>Dataset</b> (Step 2) → upload or select a built-in dataset (MNIST, CIFAR-10…). "
+             "VisionForge detects the task type, class names, and input shape automatically.",
+             "📊"),
+            ("2️⃣", "Select a Model",
+             "Go to <b>Model Selection</b> (Step 3) → pick a framework (PyTorch/TensorFlow/Scikit-learn) "
+             "and architecture. Recommended choices are highlighted with ⭐.",
+             "🧠"),
+            ("3️⃣", "Start Training",
+             "Go to <b>Training</b> (Step 4) → choose a preset (Debug · Quick · Standard · Full) or fine-tune "
+             "hyperparameters. Enable early stopping to avoid overfitting.",
+             "🔥"),
+            ("4️⃣", "View Results",
+             "After training go to <b>Results</b> (Step 5) → see accuracy/mAP@50/mIoU curves, "
+             "confusion matrix, and per-class stats. Download the best checkpoint.",
+             "📈"),
+            ("5️⃣", "Run Inference",
+             "Go to <b>Inference</b> → upload an image (or batch) and run predictions. "
+             "Use the confidence threshold slider to filter low-confidence outputs.",
+             "🔍"),
+            ("6️⃣", "Export & Deploy",
+             "Come back here → <b>Export & Deploy</b> tab → convert your model to ONNX or TorchScript "
+             "for production deployment.",
+             "📤"),
+        ]
+
+        for icon, title, body, emoji in _steps:
+            st.markdown(
+                f'<div style="display:flex;gap:1rem;align-items:flex-start;'
+                f'background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);'
+                f'border-radius:10px;padding:.9rem 1.1rem;margin-bottom:.6rem">'
+                f'<span style="font-size:1.4rem;line-height:1">{icon}</span>'
+                f'<div>'
+                f'<div style="font-weight:700;font-size:.95rem;margin-bottom:.25rem">'
+                f'{emoji} {title}</div>'
+                f'<div style="font-size:.84rem;color:var(--text-secondary)">{body}</div>'
+                f'</div></div>',
+                unsafe_allow_html=True,
+            )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        section("💡", "Task Type Reference")
+        st.markdown("""
+| Task | Metric | Supported Frameworks | Use Case |
+|------|--------|----------------------|----------|
+| **Classification** | Accuracy | PyTorch · TensorFlow · Scikit-learn | Assign a label to an image |
+| **Object Detection** | mAP@50 | PyTorch only | Locate and classify objects in an image |
+| **Segmentation** | mIoU · Dice | PyTorch only | Pixel-level class labelling |
+""")
 
     with tab_hw:
         col1, col2 = st.columns([1, 1])

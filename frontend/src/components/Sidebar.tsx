@@ -48,7 +48,16 @@ export default function Sidebar() {
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-surface-600">
         <div className="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center text-white font-bold text-sm">V</div>
-        <span className="text-white font-semibold tracking-wide">VisionForge</span>
+        <div className="flex flex-col">
+          <span className="text-white font-semibold tracking-wide leading-tight">VisionForge</span>
+          <span className="text-xs text-slate-500 leading-none">v2.2</span>
+        </div>
+        {runningCount > 0 && (
+          <span className="ml-auto flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-brand-600/20 border border-brand-600/40">
+            <span className="w-1.5 h-1.5 rounded-full bg-brand-400 animate-pulse" />
+            <span className="text-xs text-brand-400 font-medium">{runningCount}</span>
+          </span>
+        )}
       </div>
 
       {/* Nav */}
@@ -145,7 +154,7 @@ export default function Sidebar() {
       )}
 
       {/* Footer */}
-      <div className="px-4 py-3 border-t border-surface-600">
+      <div className="px-4 py-3 border-t border-surface-600 space-y-2">
         <a
           href="https://github.com/vfvision-ai/visionforge-ai"
           target="_blank"
@@ -155,6 +164,7 @@ export default function Sidebar() {
           <Github size={14} />
           vfvision-ai/visionforge-ai
         </a>
+        <p className="text-xs text-slate-600">AI Computer Vision Platform</p>
       </div>
     </aside>
   )

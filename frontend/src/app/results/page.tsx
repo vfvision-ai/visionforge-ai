@@ -157,7 +157,8 @@ export default function ResultsPage() {
                   <th className="pb-3 pr-4 font-medium cursor-pointer hover:text-slate-300" onClick={() => toggleSort('architecture')}>Architecture <SortIcon col="architecture" /></th>
                   <th className="pb-3 pr-4 font-medium cursor-pointer hover:text-slate-300" onClick={() => toggleSort('framework')}>Framework <SortIcon col="framework" /></th>
                   <th className="pb-3 pr-4 font-medium cursor-pointer hover:text-slate-300" onClick={() => toggleSort('status')}>Status <SortIcon col="status" /></th>
-                  <th className="pb-3 pr-4 font-medium cursor-pointer hover:text-slate-300" onClick={() => toggleSort('accuracy')}>Accuracy <SortIcon col="accuracy" /></th>
+                  <th className="pb-3 pr-4 font-medium">Task</th>
+                  <th className="pb-3 pr-4 font-medium cursor-pointer hover:text-slate-300" onClick={() => toggleSort('accuracy')}>Metric <SortIcon col="accuracy" /></th>
                   <th className="pb-3 pr-4 font-medium cursor-pointer hover:text-slate-300" onClick={() => toggleSort('duration')}>Duration <SortIcon col="duration" /></th>
                   <th className="pb-3 pr-4 font-medium cursor-pointer hover:text-slate-300" onClick={() => toggleSort('created_at')}>Started <SortIcon col="created_at" /></th>
                   <th className="pb-3 font-medium" />
@@ -171,14 +172,27 @@ export default function ResultsPage() {
                     <td className="py-3 pr-4 text-slate-300">{job.architecture}</td>
                     <td className="py-3 pr-4 text-slate-300 capitalize">{job.framework}</td>
                     <td className="py-3 pr-4"><Badge status={job.status} /></td>
-                    <td className="py-3 pr-4 text-slate-300">
-                      {job.results?.best_accuracy != null
-                        ? `${((job.results.best_accuracy as number) * 100).toFixed(1)}%`
+                    <td className="py-3 pr-4">
+                      {job.task_type === 'detection' ? (
+                        <span className="px-2 py-0.5 rounded-full text-xs bg-orange-500/15 text-orange-300 font-medium">Detection</span>
+                      ) : job.task_type === 'segmentation' ? (
+                        <span className="px-2 py-0.5 rounded-full text-xs bg-purple-500/15 text-purple-300 font-medium">Segmentation</span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-xs bg-brand-500/15 text-brand-300 font-medium">Classification</span>
+                      )}
+                    </td>
+                    <td className="py-3 pr-4 text-slate-300 font-mono text-xs">
+                      {job.task_type === 'detection' && job.results?.best_map != null
+                        ? <><span className="text-slate-500 text-xs mr-1">mAP@50</span>{((job.results.best_map as number) * 100).toFixed(1)}%</>
+                        : job.task_type === 'segmentation' && job.results?.best_miou != null
+                        ? <><span className="text-slate-500 text-xs mr-1">mIoU</span>{((job.results.best_miou as number) * 100).toFixed(1)}%</>
+                        : job.results?.best_accuracy != null
+                        ? <><span className="text-slate-500 text-xs mr-1">Acc</span>{((job.results.best_accuracy as number) * 100).toFixed(1)}%</>
                         : job.results?.best_miou != null
-                        ? `mIoU ${((job.results.best_miou as number) * 100).toFixed(1)}%`
+                        ? <><span className="text-slate-500 text-xs mr-1">mIoU</span>{((job.results.best_miou as number) * 100).toFixed(1)}%</>
                         : job.results?.best_map != null
-                        ? `mAP ${((job.results.best_map as number) * 100).toFixed(1)}%`
-                        : '—'}
+                        ? <><span className="text-slate-500 text-xs mr-1">mAP</span>{((job.results.best_map as number) * 100).toFixed(1)}%</>
+                        : <span className="text-slate-600">—</span>}
                     </td>
                     <td className="py-3 pr-4 text-slate-400">{formatDuration(job.started_at, job.completed_at)}</td>
                     <td className="py-3 pr-4 text-slate-500">{formatDate(job.created_at)}</td>

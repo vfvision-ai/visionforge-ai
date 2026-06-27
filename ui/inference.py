@@ -506,7 +506,7 @@ def show_inference():
         col = cols[idx % len(cols)]
 
         with col:
-            st.image(img, caption=file.name, use_container_width=True)
+            st.image(img, caption=file.name, use_column_width=True)
 
             with st.spinner("Running…"):
                 try:
@@ -536,7 +536,7 @@ def show_inference():
                                 cam = _compute_gradcam(model, tensor, None, device)
                                 if cam is not None:
                                     overlay = _overlay_heatmap(img, cam)
-                                    st.image(overlay, caption="GradCAM", use_container_width=True)
+                                    st.image(overlay, caption="GradCAM", use_column_width=True)
                             except Exception as ge:
                                 st.caption(f"GradCAM unavailable: {ge}")
                                 logger.debug(f"GradCAM error details: {ge}", exc_info=True)

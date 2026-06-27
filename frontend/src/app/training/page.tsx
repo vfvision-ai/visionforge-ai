@@ -1,12 +1,33 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Cpu, Play, ChevronDown, ChevronUp } from 'lucide-react'
+import { Cpu, Play, ChevronDown, ChevronUp, AlertTriangle, Info } from 'lucide-react'
 import Card from '@/components/Card'
 import Button from '@/components/Button'
 import { Input, Select } from '@/components/FormControls'
 import { submitJob } from '@/lib/api'
 import type { TrainingSubmitPayload } from '@/types'
+
+// Framework/task compatibility rules
+const TF_DETECTION_SEGMENTATION_WARNING = 'TensorFlow only supports classification in this pipeline. Detection and segmentation require PyTorch.'
+const SKLEARN_DETECTION_SEGMENTATION_WARNING = 'Scikit-learn does not support detection or segmentation. Switch to PyTorch for those tasks.'
+
+function getCompatibilityWarning(framework: string, taskType: string): string | null {
+  if (framework === 'tensorflow' && (taskType === 'detection' || taskType === 'segmentation')) {
+    return TF_DETECTION_SEGMENTATION_WARNING
+  }
+  if (framework === 'sklearn' && (taskType === 'detection' || taskType === 'segmentation')) {
+    return SKLEARN_DETECTION_SEGMENTATION_WARNING
+  }
+  return null
+}
+
+// Task-specific metric label
+function getMetricLabel(taskType: string): string {
+  if (taskType === 'detection') return 'mAP@50'
+  if (taskType === 'segmentation') return 'mIoU'
+  return 'Accuracy'
+}
 
 const FRAMEWORKS = [
   { value: 'pytorch',     label: 'PyTorch' },
@@ -195,6 +216,8 @@ export default function TrainingPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault(); setError(''); setLoading(true)
+    const warn = getCompatibilityWarning(form.framework, form.task_type)
+    if (warn) { setError(warn); setLoading(false); return }
     try {
       const payload: TrainingSubmitPayload = {
         framework:            form.framework as TrainingSubmitPayload['framework'],
@@ -277,6 +300,24 @@ export default function TrainingPage() {
                 const newArchs = (ARCHITECTURES[newFw] ?? ARCHITECTURES.pytorch)[form.task_type] ?? ARCHITECTURES.pytorch.classification
                 set('architecture', newArchs[0]?.value ?? '')
               }} options={FRAMEWORKS} />
+          </div>
+
+          {/* Framework/task compatibility warning */}
+          {(() => {
+            const warn = getCompatibilityWarning(form.framework, form.task_type)
+            if (!warn) return null
+            return (
+              <div className="mt-3 flex items-start gap-2 p-3 rounded-lg bg-amber-900/20 border border-amber-700/40 text-xs text-amber-300">
+                <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                <span>{warn}</span>
+              </div>
+            )
+          })()}
+
+          {/* Task metric info */}
+          <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
+            <Info size={12} />
+            <span>Primary metric tracked: <span className="text-brand-400 font-medium">{getMetricLabel(form.task_type)}</span></span>
           </div>
         </Card>
 

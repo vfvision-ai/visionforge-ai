@@ -1575,7 +1575,7 @@ def show_results():
                             
                             # Load and preprocess image
                             pil_img = PILImage.open(uploaded_img).convert('RGB')
-                            st.image(pil_img, caption="Uploaded Image", use_container_width=True)
+                            st.image(pil_img, caption="Uploaded Image", use_column_width=True)
                             
                             transform_inf = transforms.Compose([
                                 transforms.Resize(img_size_inf),
