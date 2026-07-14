@@ -223,6 +223,11 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class LogoutRequest(BaseModel):
+    """refresh_token is optional so a client can still log out with only an access token."""
+    refresh_token: Optional[str] = None
+
+
 class TokenResponse(BaseModel):
     access_token:  str
     refresh_token: str

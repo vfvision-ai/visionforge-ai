@@ -13,9 +13,20 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from api.dependencies import get_db
+from api.dependencies import get_db, get_current_user
+from db.models import User, UserRole
 
 router = APIRouter()
+
+
+def _check_model_ownership(job, current_user: User, model_id: str) -> None:
+    """Raise 404 (not 403, to avoid confirming the model's existence) unless
+    the caller is an admin or owns the training job the model came from."""
+    if current_user.role == UserRole.ADMIN:
+        return
+    job_uid = job.user_id if job else None
+    if job_uid != current_user.id:
+        raise HTTPException(status_code=404, detail=f"Model {model_id!r} not found.")
 
 # Image extensions we'll try to infer inside a ZIP
 _IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".gif", ".tiff"}
@@ -468,6 +479,7 @@ async def run_inference(
     model_id: str    = Form(..., description="ModelVersion ID from /api/v1/models/"),
     top_k: int       = Form(5,  description="Number of top predictions to return"),
     db: Session      = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Upload an image and receive the top-k class predictions from the chosen model.
@@ -475,6 +487,7 @@ async def run_inference(
     Supported frameworks: **pytorch**, **tensorflow**, **sklearn**.
     """
     mv, path, framework, arch, num_classes, stored_class_names, job = _resolve_model(model_id, db)
+    _check_model_ownership(job, current_user, model_id)
     top_k = max(1, min(top_k, num_classes))
     img_data = await file.read()
     img = _open_image(img_data)
@@ -632,6 +645,7 @@ async def run_inference_zip(
     model_id: str = Form(..., description="ModelVersion ID"),
     top_k: int    = Form(5,  description="Top-K predictions per image"),
     db: Session   = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Upload the same ZIP that **Download Test Samples** produces and receive a CSV
@@ -643,6 +657,7 @@ async def run_inference_zip(
     columns will be empty and ``correct`` will be blank.
     """
     mv, path, framework, arch, num_classes, class_names, job = _resolve_model(model_id, db)
+    _check_model_ownership(job, current_user, model_id)
     effective_top_k = max(1, min(top_k, num_classes))
 
     zip_data = await file.read()

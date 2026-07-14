@@ -7,12 +7,14 @@ Dependencies:
 """
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import bcrypt
 from jose import JWTError, jwt
 
+from utils import token_store
 from utils.settings import settings as _settings
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -32,8 +34,11 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 # ── JWT helpers ───────────────────────────────────────────────────────────────
 def _create_token(data: dict, expires_delta: timedelta) -> str:
+    now = datetime.now(tz=timezone.utc)
     payload = data.copy()
-    payload["exp"] = datetime.now(tz=timezone.utc) + expires_delta
+    payload["iat"] = now
+    payload["exp"] = now + expires_delta
+    payload["jti"] = str(uuid.uuid4())
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -52,22 +57,36 @@ def create_refresh_token(user_id: str) -> str:
 
 
 def decode_access_token(token: str) -> Optional[dict]:
-    """Returns the payload dict or None if invalid / expired."""
+    """Returns the payload dict, or None if invalid / expired / revoked."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         if payload.get("type") != "access":
+            return None
+        if token_store.is_revoked(payload.get("jti", "")):
             return None
         return payload
     except JWTError:
         return None
 
 
-def decode_refresh_token(token: str) -> Optional[str]:
-    """Returns user_id (sub) from a valid refresh token, or None."""
+def decode_refresh_token(token: str) -> Optional[dict]:
+    """Returns the payload dict, or None if invalid / expired / revoked."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         if payload.get("type") != "refresh":
             return None
-        return payload.get("sub")
+        if token_store.is_revoked(payload.get("jti", "")):
+            return None
+        return payload
     except JWTError:
         return None
+
+
+def revoke_token(payload: dict) -> None:
+    """Add a decoded token's jti to the Redis denylist until its natural expiry."""
+    jti = payload.get("jti")
+    exp = payload.get("exp")
+    if not jti or not exp:
+        return
+    ttl_seconds = int(exp - datetime.now(tz=timezone.utc).timestamp())
+    token_store.revoke(jti, ttl_seconds)

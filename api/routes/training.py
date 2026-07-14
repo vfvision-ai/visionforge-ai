@@ -66,8 +66,6 @@ def submit_training_job(
     """
     _check_framework_available(payload.framework)
 
-    output_dir = os.path.join("/app/experiments", f"job_{payload.dataset_name}_{payload.architecture}")
-
     job = crud.create_job(
         db=db,
         task_type=payload.task_type,
@@ -87,9 +85,13 @@ def submit_training_job(
         },
         dataset_config=payload.dataset_config,
         experiment_id=payload.experiment_id,
-        output_dir=output_dir,
+        output_dir=None,
         user_id=current_user.id,
     )
+    # Keyed by job.id (not dataset+architecture) so two concurrent jobs on the
+    # same dataset/architecture never share — and clobber — an output directory.
+    output_dir = os.path.join("/app/experiments", f"job_{job.id}")
+    job.output_dir = output_dir
     db.commit()
 
     # Dispatch to the appropriate Celery task
@@ -371,10 +373,13 @@ def _class_names_for(dataset_name: str) -> list:
 def download_results_json(
     job_id: str,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     import json as _json
     job = crud.get_job(db, job_id)
     if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id!r} not found.")
+    if current_user.role != UserRole.ADMIN and job.user_id != current_user.id:
         raise HTTPException(status_code=404, detail=f"Job {job_id!r} not found.")
     payload = {
         "job_id":           job.id,

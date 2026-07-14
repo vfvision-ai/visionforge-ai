@@ -173,6 +173,7 @@ ps:
 	docker compose ps
 
 docker-shell:
+	@echo "Opening shell in container..."
 	docker exec -it cv-streamlit /bin/bash
 
 # Deployment commands
@@ -182,32 +183,14 @@ deploy-ec2:
 	ssh $(EC2_HOST) "cd /opt/ml-platform && ./deploy/aws/deploy.sh --tag $(TAG)"
 
 deploy-dev:
-	make up
-
-deploy-prod:
-	make up-prod
-	@echo "Stopping Docker containers..."
-	docker-compose down
-	@echo "✓ Containers stopped"
-
-docker-logs:
-	@echo "Viewing logs (Ctrl+C to exit)..."
-	docker-compose logs -f
-
-docker-shell:
-	@echo "Opening shell in container..."
-	docker exec -it ml-platform /bin/bash
-
-# Deployment commands
-deploy-dev:
 	@echo "Deploying in development mode..."
-	docker-compose up -d
-	@echo "✓ Development deployment complete"
+	docker compose up -d
+	@echo "✅ Development deployment complete"
 
 deploy-prod:
 	@echo "Deploying in production mode..."
-	docker-compose --profile production up -d
-	@echo "✓ Production deployment complete"
+	docker compose --profile production up -d
+	@echo "✅ Production deployment complete"
 
 # Backup and restore
 backup:
@@ -228,9 +211,6 @@ health:
 	@curl -sf http://localhost:8000/health   && echo "✅ API healthy"          || echo "❌ API unreachable"
 	@curl -sf http://localhost:8501/_stcore/health && echo "✅ Streamlit healthy" || echo "❌ Streamlit unreachable"
 	@docker exec cv-redis redis-cli ping    2>/dev/null && echo "✅ Redis healthy"    || echo "⚠️  Redis container not running"
-
-metrics:
-	@curl -s http://localhost:9090/metrics 2>/dev/null || echo "Prometheus not running"
 
 metrics:
 	@echo "Fetching metrics..."

@@ -195,6 +195,25 @@ def train_pytorch(
             from core.trainer import AutoTrainer
             from utils.callbacks import DBProgressCallback
 
+            if hyperparams.get("optimize_hyperparams"):
+                from core.optimizer import HyperparameterOptimizer
+
+                n_trials = int(hyperparams.get("n_trials") or 20)
+                logger.info("[job=%s] Running Optuna hyperparameter search (%d trials)", job_id, n_trials)
+                try:
+                    best_params = HyperparameterOptimizer().optimize(config, n_trials=n_trials)
+                    for key, value in best_params.items():
+                        if hasattr(config, key):
+                            setattr(config, key, value)
+                        else:
+                            config.model_config.config_params[key] = value
+                    logger.info("[job=%s] HPO complete. Best params: %s", job_id, best_params)
+                except Exception as hpo_exc:
+                    logger.warning(
+                        "[job=%s] HPO failed, falling back to submitted hyperparameters: %s",
+                        job_id, hpo_exc,
+                    )
+
             trainer = AutoTrainer(config=config)
             trainer.callback_manager.add_callback(DBProgressCallback(job_id))
             result_obj = trainer.train()  # AutoTrainer.train() takes no args

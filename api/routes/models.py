@@ -152,9 +152,14 @@ def backfill_models(
 def download_model(
     model_id: str,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    mv = db.query(__import__('db.models', fromlist=['ModelVersion']).ModelVersion).filter_by(id=model_id).first()
+    from db.models import ModelVersion, TrainingJob as TJ
+    mv = db.query(ModelVersion).filter_by(id=model_id).first()
     if not mv:
+        raise HTTPException(status_code=404, detail=f"Model {model_id!r} not found.")
+    job_uid = db.query(TJ.user_id).filter(TJ.id == mv.job_id).scalar()
+    if current_user.role != UserRole.ADMIN and job_uid != current_user.id:
         raise HTTPException(status_code=404, detail=f"Model {model_id!r} not found.")
     path = mv.model_path
     if not path or not os.path.isfile(path):
@@ -176,13 +181,17 @@ def export_model(
     model_id: str,
     req: ExportRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Loads the saved checkpoint, rebuilds the model, and streams back the
     exported file.  Only supports PyTorch (*.pt / *.pth) checkpoints."""
-    from db.models import ModelVersion as MV  # local import to keep module lightweight
+    from db.models import ModelVersion as MV, TrainingJob as TJ  # local import to keep module lightweight
 
     mv = db.query(MV).filter_by(id=model_id).first()
     if not mv:
+        raise HTTPException(status_code=404, detail=f"Model {model_id!r} not found.")
+    job_uid = db.query(TJ.user_id).filter(TJ.id == mv.job_id).scalar()
+    if current_user.role != UserRole.ADMIN and job_uid != current_user.id:
         raise HTTPException(status_code=404, detail=f"Model {model_id!r} not found.")
     if mv.framework != "pytorch":
         raise HTTPException(status_code=400, detail="Export only supported for PyTorch models.")

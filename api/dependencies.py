@@ -50,6 +50,17 @@ def require_api_key(api_key: Optional[str] = Security(_api_key_header)) -> str:
 _oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
 
+def get_current_access_token(token: Optional[str] = Depends(_oauth2_scheme)) -> str:
+    """FastAPI dependency that returns the raw bearer token string (for logout)."""
+    if token is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return token
+
+
 def get_current_user(
     token: Optional[str] = Depends(_oauth2_scheme),
     db: Session = Depends(get_db),

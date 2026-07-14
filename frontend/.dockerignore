@@ -1,0 +1,20 @@
+# Node
+node_modules
+npm-debug.log*
+
+# Next.js build output (rebuilt in image)
+.next
+out
+
+# Secrets — never bake these into an image layer
+.env
+.env.*
+!.env.example
+
+# Git / IDE / OS
+.git
+.gitignore
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

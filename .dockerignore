@@ -5,6 +5,11 @@
 .git
 .gitignore
 
+# Secrets — never bake these into an image layer
+.env
+.env.*
+!.env.example
+
 # Docker files
 Dockerfile
 docker-compose.yml

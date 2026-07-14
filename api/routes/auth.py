@@ -3,20 +3,22 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from api import auth as auth_utils
-from api.dependencies import get_db, get_current_user
+from api.dependencies import get_db, get_current_user, get_current_access_token
 
 from api.schemas import (
-    UserRegister, UserLogin, RefreshRequest, TokenResponse,
+    UserRegister, UserLogin, RefreshRequest, LogoutRequest, TokenResponse,
     UserResponse, UserListResponse, UserPatch, BootstrapAdminRequest,
 )
 from db import auth_crud
 from db.models import User, UserRole
+from utils import rate_limit
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -33,7 +35,7 @@ def bootstrap_admin(payload: BootstrapAdminRequest, db: Session = Depends(get_db
     Protected by SECRET_KEY so it cannot be exploited once an admin is present.
     """
     expected = os.getenv("SECRET_KEY", "")
-    if not expected or payload.secret != expected:
+    if not expected or not secrets.compare_digest(payload.secret, expected):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid secret.")
 
     # Refuse if an admin already exists
@@ -65,7 +67,8 @@ def bootstrap_admin(payload: BootstrapAdminRequest, db: Session = Depends(get_db
     status_code=status.HTTP_201_CREATED,
     summary="Create a new account",
 )
-def register(payload: UserRegister, db: Session = Depends(get_db)):
+def register(payload: UserRegister, request: Request, db: Session = Depends(get_db)):
+    rate_limit.enforce(request, scope="register", limit=5, window_seconds=60)
     if auth_crud.get_user_by_email(db, payload.email):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -86,7 +89,8 @@ def register(payload: UserRegister, db: Session = Depends(get_db)):
 
 # ── Login ─────────────────────────────────────────────────────────────────────
 @router.post("/login", response_model=TokenResponse, summary="Obtain JWT tokens")
-def login(payload: UserLogin, db: Session = Depends(get_db)):
+def login(payload: UserLogin, request: Request, db: Session = Depends(get_db)):
+    rate_limit.enforce(request, scope="login", limit=10, window_seconds=60)
     user = auth_crud.get_user_by_email(db, payload.email)
 
     # Check account lockout before doing any password work
@@ -153,15 +157,20 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
 # ── Refresh ───────────────────────────────────────────────────────────────────
 @router.post("/refresh", response_model=TokenResponse, summary="Refresh access token")
 def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
-    user_id = auth_utils.decode_refresh_token(payload.refresh_token)
-    if not user_id:
+    refresh_payload = auth_utils.decode_refresh_token(payload.refresh_token)
+    if not refresh_payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired refresh token.",
         )
-    user = auth_crud.get_user_by_id(db, user_id)
+    user = auth_crud.get_user_by_id(db, refresh_payload.get("sub"))
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found.")
+
+    # Rotate: revoke the old refresh token so a stolen copy can't be replayed
+    # after the client has moved on to the newly issued one.
+    auth_utils.revoke_token(refresh_payload)
+
     new_access  = auth_utils.create_access_token(str(user.id), user.email, user.role.value)
     new_refresh = auth_utils.create_refresh_token(str(user.id))
     return TokenResponse(
@@ -170,6 +179,26 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
         token_type="bearer",
         user=UserResponse.model_validate(user),
     )
+
+
+# ── Logout ────────────────────────────────────────────────────────────────────
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Revoke the current access token (and refresh token, if supplied)",
+)
+def logout(
+    payload: LogoutRequest = Body(default_factory=LogoutRequest),
+    token: str = Depends(get_current_access_token),
+):
+    access_payload = auth_utils.decode_access_token(token)
+    if access_payload:
+        auth_utils.revoke_token(access_payload)
+    if payload.refresh_token:
+        refresh_payload = auth_utils.decode_refresh_token(payload.refresh_token)
+        if refresh_payload:
+            auth_utils.revoke_token(refresh_payload)
+    return None
 
 
 # ── Me ────────────────────────────────────────────────────────────────────────

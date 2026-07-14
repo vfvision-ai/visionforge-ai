@@ -496,11 +496,12 @@ class HealthChecker:
         """Check database connectivity."""
         try:
             # Import here to avoid circular dependency
+            from sqlalchemy import text
             from db.database import SessionLocal
-            
+
             db = SessionLocal()
             # Simple query
-            db.execute("SELECT 1")
+            db.execute(text("SELECT 1"))
             db.close()
             return True
         except Exception as e:

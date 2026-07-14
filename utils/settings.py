@@ -37,6 +37,10 @@ class Settings:
     MAX_FILE_SIZE_MB: int = config('MAX_FILE_SIZE_MB', default=500, cast=int)
     RATE_LIMIT_REQUESTS: int = config('RATE_LIMIT_REQUESTS', default=100, cast=int)
     RATE_LIMIT_PERIOD: int = config('RATE_LIMIT_PERIOD', default=60, cast=int)
+
+    # Redis (broker host/port, split out for direct redis-py clients)
+    REDIS_HOST: str = config('REDIS_HOST', default='localhost')
+    REDIS_PORT: int = config('REDIS_PORT', default=6379, cast=int)
     
     # Logging
     LOG_LEVEL: str = config('LOG_LEVEL', default='INFO')
